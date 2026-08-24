@@ -1,6 +1,17 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+report_failure() {
+  local status=$?
+  local failed_line=${BASH_LINENO[0]}
+  local failed_command=${BASH_COMMAND}
+  printf 'gridora image provisioning failed at line %s (exit %s): %s\n' \
+    "${failed_line}" "${status}" "${failed_command}" >&2
+  exit "${status}"
+}
+
+trap report_failure ERR
+
 test -n "${GRIDORA_IMAGE_VERSION:-}"
 test -n "${GRIDORA_NODE_VERSION:-}"
 [[ "${GRIDORA_SOURCE_COMMIT:-}" =~ ^[a-f0-9]{40}$ ]]
@@ -77,29 +88,46 @@ sudo install -d -o root -g root -m 0700 /var/lib/gridora/quota
 test -s /tmp/gridora-agent-update-manifest.json
 test -s /tmp/gridora-agent-release-signing-public.pem
 test -s /tmp/gridora-agent-update-policy.json
-agent_update_keys='["apiVersion","architecture","compatibility","issuedAt","releaseSequence","securityEpoch","signature","source","version"]'
+agent_update_top_level_keys='["apiVersion","architecture","compatibility","issuedAt","releaseSequence","securityEpoch","signature","source","version"]'
 agent_update_source_keys='["sha256","sizeBytes","url"]'
 agent_update_compatibility_keys='["commandApiVersion","maximumControlPlaneApiVersion","minimumControlPlaneApiVersion"]'
 jq -e \
-  --argjson keys "${agent_update_keys}" \
+  --argjson topLevelKeys "${agent_update_top_level_keys}" \
   --argjson sourceKeys "${agent_update_source_keys}" \
   --argjson compatibilityKeys "${agent_update_compatibility_keys}" \
   --arg checksum "sha256:${GRIDORA_AGENT_BINARY_CHECKSUM}" '
-    type == "object" and keys == $keys and
-    .apiVersion == "agent-update.gridora.dev/v1alpha1" and
-    (.version | type == "string" and test("^[A-Za-z0-9][A-Za-z0-9.+_-]{0,63}$")) and
-    .architecture == "amd64" and
-    (.releaseSequence | type == "number" and floor == . and . >= 1) and
-    (.securityEpoch | type == "number" and floor == . and . >= 1) and
-    (.issuedAt | type == "string" and test("^[0-9]{4}-[0-9]{2}-[0-9]{2}T")) and
-    (.signature | type == "string" and test("^[A-Za-z0-9+/]+={0,2}$")) and
-    (.source | type == "object" and keys == $sourceKeys and
-      .sha256 == $checksum and .sizeBytes > 0 and .sizeBytes <= 134217728 and
-      .url | type == "string" and test("^https://")) and
-    (.compatibility | type == "object" and keys == $compatibilityKeys and
-      .commandApiVersion == "agent.gridora.dev/v1alpha1" and
-      .minimumControlPlaneApiVersion == "agent.gridora.dev/v1alpha1" and
-      .maximumControlPlaneApiVersion == "agent.gridora.dev/v1alpha1")
+    (type == "object") and
+    (keys == $topLevelKeys) and
+    (.apiVersion == "agent-update.gridora.dev/v1alpha1") and
+    ((.version | type) == "string") and
+    (.version | test("^[A-Za-z0-9][A-Za-z0-9.+_-]{0,63}$")) and
+    (.architecture == "amd64") and
+    ((.releaseSequence | type) == "number") and
+    (.releaseSequence == (.releaseSequence | floor)) and
+    (.releaseSequence >= 1) and
+    ((.securityEpoch | type) == "number") and
+    (.securityEpoch == (.securityEpoch | floor)) and
+    (.securityEpoch >= 1) and
+    ((.issuedAt | type) == "string") and
+    (.issuedAt | test("^[0-9]{4}-[0-9]{2}-[0-9]{2}T")) and
+    ((.signature | type) == "string") and
+    (.signature | test("^[A-Za-z0-9+/]+={0,2}$")) and
+    (.source |
+      (type == "object") and
+      (keys == $sourceKeys) and
+      (.sha256 == $checksum) and
+      ((.sizeBytes | type) == "number") and
+      (.sizeBytes == (.sizeBytes | floor)) and
+      (.sizeBytes >= 1) and
+      (.sizeBytes <= 134217728) and
+      ((.url | type) == "string") and
+      (.url | test("^https://"))) and
+    (.compatibility |
+      (type == "object") and
+      (keys == $compatibilityKeys) and
+      (.commandApiVersion == "agent.gridora.dev/v1alpha1") and
+      (.minimumControlPlaneApiVersion == "agent.gridora.dev/v1alpha1") and
+      (.maximumControlPlaneApiVersion == "agent.gridora.dev/v1alpha1"))
   ' /tmp/gridora-agent-update-manifest.json >/dev/null
 agent_update_size=$(jq -r '.source.sizeBytes' /tmp/gridora-agent-update-manifest.json)
 [[ "${agent_update_size}" == "$(wc -c </tmp/gridora-agent | tr -d '[:space:]')" ]] ||

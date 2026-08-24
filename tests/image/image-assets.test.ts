@@ -149,6 +149,17 @@ describe('node image assets', () => {
     expect(provision.indexOf(directory)).toBeLessThan(provision.indexOf(policy))
   })
 
+  it('keeps signed agent manifest validation explicitly scoped and diagnosable', () => {
+    const provision = asset('infra/packer/scripts/provision.sh')
+    expect(provision).toContain('local failed_line=${BASH_LINENO[0]}')
+    expect(provision).toContain('gridora image provisioning failed at line %s')
+    expect(provision).toContain('agent_update_top_level_keys=')
+    expect(provision).toContain('(.source |\n      (type == "object")')
+    expect(provision).toContain('((.url | type) == "string")')
+    expect(provision).toContain('(.compatibility |\n      (type == "object")')
+    expect(provision).not.toContain('.url | type == "string" and')
+  })
+
   it('removes the ephemeral Packer SSH key', () => {
     const packer = asset('infra/packer/gridora-node.pkr.hcl')
     expect(packer).toContain('rm -f /home/gridora/.ssh/authorized_keys')
