@@ -126,3 +126,5 @@ Rejected.
   initrd commands instead of depending on mutable menu-editor line positions.
 - ADR 0093 creates the private guest directory required by Packer's
   content-only asset upload before the SCP provisioner runs.
+- ADR 0094 gives the key-authenticated Packer build account a validated
+  temporary sudo grant and removes it with the build key before shutdown.

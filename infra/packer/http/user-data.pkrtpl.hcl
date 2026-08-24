@@ -15,4 +15,8 @@ autoinstall:
       name: direct
   packages: [qemu-guest-agent]
   late-commands:
+    - curtin in-target --target=/target -- install -d -m 0755 /etc/sudoers.d
+    - 'printf "gridora ALL=(ALL) NOPASSWD:ALL\n" > /target/etc/sudoers.d/90-gridora-packer'
+    - curtin in-target --target=/target -- chmod 0440 /etc/sudoers.d/90-gridora-packer
+    - curtin in-target --target=/target -- visudo -cf /etc/sudoers.d/90-gridora-packer
     - curtin in-target --target=/target -- systemctl enable qemu-guest-agent

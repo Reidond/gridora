@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
+import { parseDocument } from 'yaml'
 
 const asset = (path: string) => readFileSync(resolve(process.cwd(), path), 'utf8')
 
@@ -146,6 +147,18 @@ describe('node image assets', () => {
     expect(packer.indexOf('rm -f /home/gridora/.ssh/authorized_keys')).toBeLessThan(
       packer.indexOf('shutdown -P now'),
     )
+  })
+
+  it('removes the validated temporary Packer sudo grant in the shutdown root process', () => {
+    const packer = asset('infra/packer/gridora-node.pkr.hcl')
+    const userData = asset('infra/packer/http/user-data.pkrtpl.hcl')
+    const userDataDocument = parseDocument(userData)
+    expect(userDataDocument.errors).toEqual([])
+    expect(userData).toContain('gridora ALL=(ALL) NOPASSWD:ALL')
+    expect(userData).toContain('chmod 0440 /etc/sudoers.d/90-gridora-packer')
+    expect(userData).toContain('visudo -cf /etc/sudoers.d/90-gridora-packer')
+    expect(packer).toContain("sudo sh -c 'rm -f")
+    expect(packer).toContain('/etc/sudoers.d/90-gridora-packer && shutdown -P now')
   })
 
   it('uses the existing Packer user-data template', () => {

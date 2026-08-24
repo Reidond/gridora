@@ -3683,3 +3683,39 @@ directory /lib/modules/6.17.0-1022-azure`. Step 116 installs the matching
   complete image. Do not tag or release until the replacement run produces and
   validates the signed artifact.
 - Decision: ADR 0093.
+
+## Step 119: Bound Packer sudo to the ephemeral image-build session
+
+- Status: local
+- Situation: Protected exact-main run 32753572704 passed autoinstall, SSH,
+  private destination creation, and every artifact upload. The provisioning
+  script then failed at its first `sudo` because the locked-password build user
+  had no noninteractive elevation rule.
+- Task: Permit the declared root provisioning actions without enabling root SSH,
+  adding a reusable password, or leaving permanent build-user elevation in the
+  image.
+- Action: In autoinstall late commands, create mode-0440
+  `/etc/sudoers.d/90-gridora-packer` for only the `gridora` build account and
+  require `visudo -cf` to validate it. Keep Ed25519 key authentication. At
+  shutdown, enter one root shell, remove both the ephemeral authorized key and
+  sudoers file, then power off without a second sudo call.
+- Result: Packer can execute the reviewed script's explicit root operations,
+  while the offline image is required to contain neither remote build access
+  path.
+- Evidence: `infra/packer/http/user-data.pkrtpl.hcl`,
+  `infra/packer/gridora-node.pkr.hcl`, `tests/image/image-assets.test.ts`, failed
+  protected run 32753572704, and ADR 0094.
+- Verification: Require pinned Packer formatting and validation, cloud-init
+  schema validation, focused image and documentation tests, the complete
+  repository gate, pull-request CI and Security, then a new exact-main protected
+  build and separately approved simulated smoke. Packer 1.14.2 formatting and
+  validation pass with QEMU plugin 1.1.6, the user-data parses as YAML, and the
+  focused records pass 19 tests. An initial full run hit two unrelated fixed
+  five-second timeouts; both tests passed immediately in isolation (6 tests and
+  1 test). A clean complete rerun reports 899 correctly formatted files, zero
+  lint or type errors across 522 files, 226 passing test files with 1,498
+  passing tests, and 112 successful builds.
+- Blocker: The successful upload proves Steps 117 and 118 but not complete
+  provisioning or credential removal. Do not tag or release until offline image
+  inspection and signed artifact evidence pass.
+- Decision: ADR 0094.
