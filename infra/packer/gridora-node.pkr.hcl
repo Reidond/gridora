@@ -140,7 +140,7 @@ source "qemu" "ubuntu" {
   memory               = 2048
   net_device           = "virtio-net"
   output_directory     = "dist/image-${var.image_version}"
-  shutdown_command     = "sudo rm -f /home/gridora/.ssh/authorized_keys && sudo shutdown -P now"
+  shutdown_command     = "sudo sh -c 'rm -f /home/gridora/.ssh/authorized_keys /etc/sudoers.d/90-gridora-packer && shutdown -P now'"
   ssh_private_key_file = var.build_ssh_private_key
   ssh_timeout          = "30m"
   ssh_username         = "gridora"
