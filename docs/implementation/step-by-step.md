@@ -3442,6 +3442,42 @@ COMMERCIAL_REVIEW_REQUIRED` public envelope. Workflow check and 29 tests,
   bypass. Tag ruleset 21286351 is active for `refs/tags/v*`, prohibits updates
   and deletions, has no exclusions or bypass actors, and reports that the
   current user can never bypass it.
-- Blocker: Pull request checks, merge, exact signed image build,
-  simulated-provider smoke, semantic tag, and protected release remain.
+- Blocker: Pull request 7 merged as `6c8af4f`. Protected image run 32740307775
+  stopped before image construction because the Linux KVM firewall probe used
+  same-bridge layer-2 traffic. Step 112 corrects that test boundary. The signed
+  image, simulated-provider smoke, semantic tag, and release remain.
 - Decision: ADR 0086.
+
+## Step 112: Prove leased ingress through Docker DNAT on Linux KVM
+
+- Status: local
+- Situation: Protected Node image run 32740307775 passed validation and owner
+  approval, then rejected the firewall preflight with `An unleased game port
+remained reachable.` The probe connected directly between two containers on
+  one Linux bridge. Same-bridge layer-2 forwarding does not have to enter the
+  host's inet forward hook, so the probe was not testing external ingress.
+- Task: Exercise the production boundary that the nftables policy controls:
+  traffic entering a Docker-published host port and crossing host DNAT into the
+  per-server bridge.
+- Action: Create separate source and target Docker bridges. Publish the leased
+  and unleased target ports on the nested host. Resolve the source bridge's host
+  gateway. Probe both published ports from the separate source bridge. Require
+  the leased port to return the expected body, the unleased port to time out,
+  and the leased port to remain reachable after the Gridora table reloads while
+  Docker's chains survive.
+- Result: The integration proof no longer mistakes same-bridge peer traffic for
+  host ingress. It checks Docker DNAT plus the Gridora forward policy on both an
+  accepted and rejected port without weakening the default-deny ruleset.
+- Evidence: `infra/scripts/validate-firewall-docker-networking.sh`,
+  `tests/image/image-assets.test.ts`, failed protected run 32740307775, and ADR 0087.
+- Verification: The fixed integration script passes in the pinned privileged
+  validation container on the local Docker engine. The expected unleased probe
+  times out, the leased probe succeeds before and after reload, and the
+  validation image test asserts separate bridges and published ports. The
+  complete `pnpm run ci` gate reports 892 correctly formatted files, zero lint
+  or type errors across 522 files, 226 passing test files with 1,494 passing
+  tests, and 112 successful builds.
+- Blocker: Publish the correction through a protected pull request, rerun the
+  exact main image workflow, approve signing and simulated smoke, and complete
+  the protected release.
+- Decision: ADR 0087.

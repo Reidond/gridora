@@ -7,9 +7,17 @@ const asset = (path: string) => readFileSync(resolve(process.cwd(), path), 'utf8
 describe('node image assets', () => {
   it('uses a default-deny host firewall', () => {
     const rules = asset('infra/images/nftables/gridora.nft')
+    const integration = asset('infra/scripts/validate-firewall-docker-networking.sh')
     expect(rules).toContain('chain input')
     expect(rules).toContain('policy drop')
     expect(rules).not.toMatch(/tcp dport (22|2375|2376) accept/)
+    expect(integration).toContain('gridora-firewall-target')
+    expect(integration).toContain('gridora-firewall-source')
+    expect(integration).toContain('--publish 2302:2302')
+    expect(integration).toContain('--publish 2303:2303')
+    expect(integration).toContain('http://${source_gateway}:2302')
+    expect(integration).toContain('http://${source_gateway}:2303')
+    expect(integration).not.toContain('http://${allowed_ip}:2302')
   })
 
   it('hardens the agent systemd unit', () => {
