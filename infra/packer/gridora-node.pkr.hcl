@@ -115,8 +115,13 @@ variable "build_ssh_private_key" {
 }
 
 source "qemu" "ubuntu" {
-  accelerator      = "kvm"
-  boot_command     = ["<esc><wait>", "e<wait>", "<down><down><down><end>", " autoinstall ds=nocloud-net;s=http://{{ .HTTPIP }}:{{ .HTTPPort }}/", "<f10>"]
+  accelerator = "kvm"
+  boot_command = [
+    "c<wait>",
+    "linux /casper/vmlinuz autoinstall ip=dhcp ds=\"nocloud-net;s=http://{{ .HTTPIP }}:{{ .HTTPPort }}/\" ---<enter><wait>",
+    "initrd /casper/initrd<enter><wait>",
+    "boot<enter>"
+  ]
   boot_wait        = "5s"
   cpus             = 2
   disk_compression = true

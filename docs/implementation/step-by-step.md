@@ -3619,3 +3619,36 @@ directory /lib/modules/6.17.0-1022-azure`. Step 116 installs the matching
   workflow, approve signing and simulated smoke, then complete the protected
   semantic release.
 - Decision: ADR 0091.
+
+## Step 117: Boot the pinned Ubuntu installer through explicit GRUB commands
+
+- Status: local
+- Situation: Owner-approved exact-main image run 32745356422 passed every
+  validation and pinned-input step, then timed out waiting for guest SSH. The
+  failed Packer command depended on moving down three lines in the Ubuntu GRUB
+  editor before appending autoinstall arguments. No provider smoke approval was
+  available because the artifact-producing job did not succeed.
+- Task: Remove the installer-menu layout dependency without extending the SSH
+  timeout or weakening image, signing, smoke, or release evidence.
+- Action: Enter the GRUB command console, load `/casper/vmlinuz` with
+  `autoinstall`, `ip=dhcp`, and the quoted `nocloud-net` Packer HTTP seed, load
+  `/casper/initrd`, and boot. Keep the generated ephemeral SSH key and its
+  pre-shutdown removal unchanged.
+- Result: The build names the pinned ISO's kernel and initrd paths directly and
+  cannot silently append its datasource to an unrelated GRUB line. GitHub will
+  expose the next single-owner approval only after a replacement exact-main
+  image artifact succeeds.
+- Evidence: `infra/packer/gridora-node.pkr.hcl`,
+  `tests/image/image-assets.test.ts`, failed protected run 32745356422, and ADR 0092.
+- Verification: Require Packer formatting and validation, the focused image and
+  documentation tests, the complete repository gate, pull-request CI and
+  Security, then a new exact-main image build plus separately approved
+  simulated provider smoke. Pinned Packer 1.14.2 formatting and validation pass
+  in its official container. The focused records pass 17 tests. The complete
+  local gate reports 897 correctly formatted files, zero lint or type errors
+  across 522 files, 226 passing test files with 1,496 passing tests, and 112
+  successful builds.
+- Blocker: Merge the reviewed repair before rerunning protected signing. The
+  failed run is not release evidence and no version tag may be published from
+  it.
+- Decision: ADR 0092.

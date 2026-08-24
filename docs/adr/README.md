@@ -122,3 +122,5 @@ Rejected.
   format module before the private project-quota proof.
 - ADR 0091 installs the matching Ubuntu extra-module package on the disposable
   runner before it loads the quota format module.
+- ADR 0092 boots the pinned Ubuntu autoinstall through explicit GRUB kernel and
+  initrd commands instead of depending on mutable menu-editor line positions.
