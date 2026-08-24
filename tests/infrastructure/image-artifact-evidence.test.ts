@@ -45,7 +45,9 @@ const rootfsArchive = async (root: string) => {
     'Package: gridora-agent\nVersion: 1.0.0\n\nPackage: cloudflared\nVersion: 2026.8.2\n',
   )
   const archive = join(root, 'rootfs-source.tar')
-  await execute('tar', ['-cf', archive, '-C', rootfs, '.'])
+  // A real Linux rootfs includes device nodes. The evidence extractor must not
+  // recreate them as the unprivileged CI user merely to read dpkg status.
+  await execute('tar', ['-cf', archive, '-C', rootfs, '.', '-C', '/', 'dev/null'])
   return archive
 }
 
@@ -83,6 +85,9 @@ describe('node image rootfs evidence', () => {
     expect(result.rootfsArchive.name).toBe('node.qcow2.rootfs.tar')
     expect(result.rootfsArchive.sha256).toBe(digest(await readFile(archive)))
     expect(result.rootfsArchive.inventory).toEqual({ format: 'dpkg-status', packageCount: 2 })
+    const extractorSource = await readFile(extractor, 'utf8')
+    expect(extractorSource).toContain('--extract --to-stdout')
+    expect(extractorSource).not.toContain('--directory')
   })
 
   it('binds a non-empty SBOM to exactly the extracted rootfs evidence', async () => {
