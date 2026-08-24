@@ -33,6 +33,13 @@ sudo DEBIAN_FRONTEND=noninteractive apt-get dist-upgrade -y --no-install-recomme
 sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
   ca-certificates cloud-init curl e2fsprogs gpg jq nftables openssl quota tar \
   unattended-upgrades zstd
+sudo DEBIAN_FRONTEND=noninteractive apt-get purge -y snapd
+if dpkg-query -W -f='${Status}' snapd >/dev/null 2>&1; then
+  echo 'snapd package remains after purge' >&2
+  exit 1
+fi
+test ! -e /usr/bin/snap
+test ! -e /usr/lib/snapd/snapd
 sudo install -d -m 0755 /etc/apt/keyrings
 curl --fail --show-error --silent --location https://download.docker.com/linux/ubuntu/gpg |
   sudo tee /etc/apt/keyrings/docker.asc >/dev/null
