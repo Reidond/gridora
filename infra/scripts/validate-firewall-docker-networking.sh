@@ -30,27 +30,31 @@ if ! docker info >/dev/null 2>&1; then
 fi
 
 docker pull "$probe_image" >/dev/null
-docker network create gridora-firewall-probe >/dev/null
-docker run -d --name gridora-firewall-allowed --network gridora-firewall-probe "$probe_image" \
+docker network create gridora-firewall-target >/dev/null
+docker network create gridora-firewall-source >/dev/null
+source_gateway="$(docker network inspect \
+  -f '{{(index .IPAM.Config 0).Gateway}}' gridora-firewall-source)"
+readonly source_gateway
+docker run -d --name gridora-firewall-allowed --network gridora-firewall-target \
+  --publish 2302:2302 "$probe_image" \
   sh -c 'mkdir /www; printf ok >/www/index.html; exec httpd -f -p 2302 -h /www' >/dev/null
-docker run -d --name gridora-firewall-denied --network gridora-firewall-probe "$probe_image" \
+docker run -d --name gridora-firewall-denied --network gridora-firewall-target \
+  --publish 2303:2303 "$probe_image" \
   sh -c 'mkdir /www; printf denied >/www/index.html; exec httpd -f -p 2303 -h /www' >/dev/null
 sleep 1
-
-allowed_ip="$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' gridora-firewall-allowed)"
-readonly allowed_ip
-denied_ip="$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' gridora-firewall-denied)"
-readonly denied_ip
 
 ruleset="$(nft list ruleset)"
 grep -Eq 'chain DOCKER|chain docker-forward' <<<"$ruleset"
 nft -f "$root/infra/images/nftables/gridora.nft"
 nft add element inet gridora leased_tcp_ports '{ 2302 }'
-allowed="$(timeout 8 docker run --rm --network gridora-firewall-probe "$probe_image" \
-  wget -qO- -T 3 "http://${allowed_ip}:2302")"
+# Probe a published port from a separate bridge. This crosses Docker's host
+# DNAT and the Gridora forward hook. Direct peers on one Linux bridge can use
+# layer 2 and never enter an inet forward hook, so they are not an ingress test.
+allowed="$(timeout 8 docker run --rm --network gridora-firewall-source "$probe_image" \
+  wget -qO- -T 3 "http://${source_gateway}:2302")"
 test "$allowed" = ok
-if timeout 6 docker run --rm --network gridora-firewall-probe "$probe_image" \
-  wget -qO- -T 3 "http://${denied_ip}:2303"; then
+if timeout 6 docker run --rm --network gridora-firewall-source "$probe_image" \
+  wget -qO- -T 3 "http://${source_gateway}:2303"; then
   printf '%s\n' 'An unleased game port remained reachable.' >&2
   exit 1
 fi
@@ -61,6 +65,6 @@ nft -f "$root/infra/images/nftables/gridora.nft"
 nft add element inet gridora leased_tcp_ports '{ 2302 }'
 ruleset="$(nft list ruleset)"
 grep -Eq 'chain DOCKER|chain docker-forward' <<<"$ruleset"
-allowed_after_reload="$(timeout 8 docker run --rm --network gridora-firewall-probe "$probe_image" \
-  wget -qO- -T 3 "http://${allowed_ip}:2302")"
+allowed_after_reload="$(timeout 8 docker run --rm --network gridora-firewall-source "$probe_image" \
+  wget -qO- -T 3 "http://${source_gateway}:2302")"
 test "$allowed_after_reload" = ok
