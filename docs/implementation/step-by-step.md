@@ -3982,6 +3982,9 @@ directory /lib/modules/6.17.0-1022-azure`. Step 116 installs the matching
   Buildx 0.36.1, and Compose 5.5.0 packages from Docker's signed Noble
   repository. Verify the key fingerprint, source, versions, owned paths, and
   absence of pending upgrades.
+- Action: Protected run 32786521368 showed that a minimal Ubuntu guest has no
+  default GnuPG home. Inspect the repository key in a dedicated mode-0700
+  temporary GnuPG home. Delete that directory after the fingerprint matches.
 - Action: Build cloudflared 2026.8.2 from exact commit
   `733bfb939963e150dcf5c4faddb1603f744fbc98` with its vendored dependencies and
   Go 1.27.0. Record the source, toolchain, and artifact digest.
@@ -3997,7 +4000,7 @@ directory /lib/modules/6.17.0-1022-azure`. Step 116 installs the matching
   `infra/packer/scripts/provision.sh`,
   `infra/scripts/validate-rootfs-package-policy.sh`,
   `infra/scripts/generate-sbom.sh`, `infra/scripts/scan-artifact.sh`, protected
-  run 32779717636, and ADR 0103.
+  runs 32779717636 and 32786521368, and ADR 0103.
 - Verification: Require Bash parsing, ShellCheck, focused policy, SBOM, scan,
   image, workflow, and documentation tests, Packer formatting and validation,
   the complete repository gate, pull-request CI and Security, then a new
@@ -4006,7 +4009,10 @@ directory /lib/modules/6.17.0-1022-azure`. Step 116 installs the matching
   validation, 42 focused tests, 909 formatted files, zero lint or type errors
   across 522 files, 226 passing test files with 1,507 passing tests, and 112
   successful builds. The dependency audit and Trivy High-or-Critical fixed
-  vulnerability and secret scan also pass.
+  vulnerability and secret scan also pass. The GnuPG repair passes Bash,
+  pinned ShellCheck, all 22 image-asset tests, and a clean Ubuntu 24.04
+  container check that verifies the exact fingerprint and temporary-keyring
+  removal.
 - Blocker: Do not tag or release until the replacement run signs and uploads
   the image and completes provider smoke.
 - Decision: ADR 0103.
@@ -4031,15 +4037,16 @@ token '<'` because the deployed Nuxt runtime had an empty API base.
 - Evidence: `apps/web/wrangler.jsonc`, `apps/web/nuxt.config.ts`,
   `apps/web/middleware/bootstrap.global.ts`, `apps/web/utils/gridora.ts`,
   `infra/scripts/render-cloudflare-environment.mjs`, production Playwright QA,
-  and ADR 0104.
+  production Worker version `1a2abd78-74ac-4729-8e4f-714f28d719ef`, and ADR 0104.
 - Verification: Require the focused environment and onboarding tests, Nuxt
   build, local rendered-Worker response inspection, complete repository gate,
   pull-request CI and Security, production deployment, then desktop and mobile
   browser QA with zero console errors. The local focused suite passes 42 tests,
   the Cloudflare runtime suite passes 11 tests, and the complete gate passes
   with the counts recorded in Step 128. The Docker VPS Arma lifecycle passes
-  install, configure, start, probe, update, rollback, and stop.
-- Blocker: Do not call the production console repaired until the merged web
-  Worker is deployed and the live public and protected hostnames pass browser
-  verification.
+  install, configure, start, probe, update, rollback, and stop. Live desktop
+  and mobile QA confirms the public sign-in and sign-up routes, exact API and
+  Access completion origins, the protected console redirect, exact API CORS,
+  and zero Gridora console errors.
+- Blocker: None for the public-entry repair. Release admission remains in Step 128.
 - Decision: ADR 0104.
