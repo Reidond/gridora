@@ -40,9 +40,12 @@ at their production paths. Add no-op Docker and nftables unit definitions only
 inside the disposable validation container. Then run `systemd-analyze verify`
 against the committed services, sockets, and paths.
 
-Run the privileged nested-Docker firewall and ext4 quota checks as explicit
-container UID and GID 0. Those checks exercise root-only host contracts; they
-must not inherit an ambiguous user mapping from a hosted runner.
+Build one disposable validation tool image from the pinned Ubuntu digest
+before granting privilege. Install cloud-init, systemd, Docker, nftables, and
+quota tooling in that build. Run the privileged nested-Docker firewall and
+ext4 quota checks from the immutable image as explicit container UID and GID 0. Those checks exercise root-only host contracts; they must not inherit an
+ambiguous user mapping or require package-manager writes after privilege is
+granted.
 
 Use the successful check-run names from the published commit as the source of
 truth for branch protection. Gate every workflow environment that can reach a
@@ -58,9 +61,10 @@ platform-specific Terraform package cannot bypass the committed dependency
 lock. Systemd verification covers every executable and service dependency
 that the provisioned node image supplies.
 
-The build occurs earlier in CI, and the lockfile carries two additional
-platform hashes. Environment review and repository rules intentionally make
-live releases require an explicit GitHub action after code verification.
+The workspace build occurs earlier in CI, the Node image job builds one
+disposable validation image, and the lockfile carries two additional platform
+hashes. Environment review and repository rules intentionally make live
+releases require an explicit GitHub action after code verification.
 
 ## Verification
 

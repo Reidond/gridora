@@ -151,6 +151,12 @@ jobs:
           -var 'build_ssh_public_key=${{ runner.temp }}/packer-key.pub'
           -var 'build_ssh_private_key=${{ runner.temp }}/packer-key'
           infra/packer/gridora-node.pkr.hcl
+      - name: Build the pinned validation tool image
+        run: >-
+          docker build
+          --file infra/images/Dockerfile.validation
+          --tag gridora-node-validation:ci
+          infra/images
       - name: Validate cloud-init, systemd, and shell assets
         run: |
           bash -n \
@@ -182,10 +188,8 @@ jobs:
             infra/scripts/sign-artifact.sh \
             infra/scripts/verify-artifact.sh
           docker run --rm -v "$PWD:/workspace:ro" \
-            ubuntu@sha256:561618e2c15bf2397621dd04f96926663a3b5616c189cf7e38db7e82f5c538ea \
+            gridora-node-validation:ci \
             bash -euc '
-              apt-get update >/dev/null
-              DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends cloud-init jq openssl systemd >/dev/null
               groupadd --gid 10001 gridora-data
               groupadd --system gridora-agent
               useradd --system --gid gridora-agent gridora-agent
@@ -229,15 +233,12 @@ jobs:
       - name: Prove Gridora firewall reload preserves Docker networking
         run: |
           docker run --rm --privileged --user 0:0 -v "$PWD:/workspace:ro" \
-            ubuntu@sha256:561618e2c15bf2397621dd04f96926663a3b5616c189cf7e38db7e82f5c538ea \
+            gridora-node-validation:ci \
             bash -euc '
               # Run a real nested Docker daemon first.  This creates Docker's
               # own nftables-compatible chains before Gridora reloads only its
               # table.  A fixture or a ruleset grep alone cannot prove that a
               # cloud-init nftables restart preserves container connectivity.
-              export DEBIAN_FRONTEND=noninteractive
-              apt-get update >/dev/null
-              apt-get install -y --no-install-recommends ca-certificates docker.io nftables >/dev/null
               dockerd --host=unix:///var/run/docker.sock --storage-driver=vfs --iptables=true --ip-masq=true \
                 >/tmp/gridora-dockerd.log 2>&1 &
               dockerd_pid=$!
@@ -282,11 +283,8 @@ jobs:
       - name: Validate the ext4 project quota command contract
         run: |
           docker run --rm --privileged --user 0:0 \
-            ubuntu@sha256:561618e2c15bf2397621dd04f96926663a3b5616c189cf7e38db7e82f5c538ea \
+            gridora-node-validation:ci \
             bash -euc '
-              export DEBIAN_FRONTEND=noninteractive
-              apt-get update >/dev/null
-              apt-get install -y --no-install-recommends e2fsprogs quota util-linux >/dev/null
               fallocate --length 268435456 /gridora-servers.ext4
               mkfs.ext4 -q -F -O quota,project -E nodiscard,quotatype=prjquota /gridora-servers.ext4
               mkdir /servers
