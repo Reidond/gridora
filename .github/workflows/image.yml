@@ -172,8 +172,11 @@ jobs:
             infra/scripts/generate-sbom.sh \
             infra/scripts/scan-artifact.sh \
             infra/scripts/sign-artifact.sh \
-            infra/scripts/verify-artifact.sh
-          shellcheck \
+            infra/scripts/verify-artifact.sh \
+            infra/scripts/validate-firewall-docker-networking.sh \
+            infra/scripts/validate-project-quota.sh
+          docker run --rm -v "$PWD:/workspace:ro" -w /workspace \
+            gridora-node-validation:ci shellcheck \
             infra/packer/scripts/provision.sh \
             infra/images/clean-cloud-init-sensitive-cache \
             infra/images/create-image-promotion-manifest \
@@ -186,7 +189,9 @@ jobs:
             infra/scripts/generate-sbom.sh \
             infra/scripts/scan-artifact.sh \
             infra/scripts/sign-artifact.sh \
-            infra/scripts/verify-artifact.sh
+            infra/scripts/verify-artifact.sh \
+            infra/scripts/validate-firewall-docker-networking.sh \
+            infra/scripts/validate-project-quota.sh
           docker run --rm -v "$PWD:/workspace:ro" \
             gridora-node-validation:ci \
             bash -euc '
@@ -230,87 +235,6 @@ jobs:
             tests/infrastructure/firewall-observation.test.ts \
             tests/infrastructure/image-promotion-manifest.test.ts \
             packages/node-provision-execution/test/index.test.ts
-      - name: Prove Gridora firewall reload preserves Docker networking
-        run: |
-          docker run --rm --privileged --user 0:0 -v "$PWD:/workspace:ro" \
-            gridora-node-validation:ci \
-            bash -euc '
-              # Run a real nested Docker daemon first.  This creates Docker's
-              # own nftables-compatible chains before Gridora reloads only its
-              # table.  A fixture or a ruleset grep alone cannot prove that a
-              # cloud-init nftables restart preserves container connectivity.
-              dockerd --host=unix:///var/run/docker.sock --storage-driver=vfs --iptables=true --ip-masq=true \
-                >/tmp/gridora-dockerd.log 2>&1 &
-              dockerd_pid=$!
-              cleanup() {
-                kill "$dockerd_pid" 2>/dev/null || true
-                wait "$dockerd_pid" 2>/dev/null || true
-              }
-              trap cleanup EXIT
-              for attempt in $(seq 1 45); do
-                docker info >/dev/null 2>&1 && break
-                sleep 1
-              done
-              docker info >/dev/null
-              readonly probe_image=busybox@sha256:73aaf090f3d85aa34ee199857f03fa3a95c8ede2ffd4cc2cdb5b94e566b11662
-              docker pull "$probe_image" >/dev/null
-              docker network create gridora-firewall-probe >/dev/null
-              docker run -d --name gridora-firewall-allowed --network gridora-firewall-probe "$probe_image" \
-                sh -c "mkdir /www; printf ok >/www/index.html; exec httpd -f -p 2302 -h /www" >/dev/null
-              docker run -d --name gridora-firewall-denied --network gridora-firewall-probe "$probe_image" \
-                sh -c "mkdir /www; printf denied >/www/index.html; exec httpd -f -p 2303 -h /www" >/dev/null
-              sleep 1
-              allowed_ip=$(docker inspect -f "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}" gridora-firewall-allowed)
-              denied_ip=$(docker inspect -f "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}" gridora-firewall-denied)
-              nft list ruleset | grep -Eq "chain DOCKER|chain docker-forward"
-              nft -f /workspace/infra/images/nftables/gridora.nft
-              nft add element inet gridora leased_tcp_ports { 2302 }
-              allowed=$(timeout 8 docker run --rm --network gridora-firewall-probe "$probe_image" \
-                wget -qO- -T 3 "http://${allowed_ip}:2302")
-              test "$allowed" = ok
-              ! timeout 6 docker run --rm --network gridora-firewall-probe "$probe_image" \
-                wget -qO- -T 3 "http://${denied_ip}:2303"
-              # A second reload exercises the same path cloud-init uses after
-              # Docker.  Docker's chain and a permitted game port must remain
-              # usable; an unleased port must remain denied.
-              nft -f /workspace/infra/images/nftables/gridora.nft
-              nft add element inet gridora leased_tcp_ports { 2302 }
-              nft list ruleset | grep -Eq "chain DOCKER|chain docker-forward"
-              allowed_after_reload=$(timeout 8 docker run --rm --network gridora-firewall-probe "$probe_image" \
-                wget -qO- -T 3 "http://${allowed_ip}:2302")
-              test "$allowed_after_reload" = ok
-            '
-      - name: Validate the ext4 project quota command contract
-        run: |
-          docker run --rm --privileged --user 0:0 \
-            gridora-node-validation:ci \
-            bash -euc '
-              fallocate --length 268435456 /gridora-servers.ext4
-              mkfs.ext4 -q -F -O quota,project -E nodiscard,quotatype=prjquota /gridora-servers.ext4
-              mkdir /servers
-              mount -o loop,nodev,nosuid,prjquota /gridora-servers.ext4 /servers
-              trap "umount /servers" EXIT
-              mkdir /servers/server-1
-              chown 10001:10001 /servers/server-1
-              chattr -R -p 1000000000 /servers/server-1
-              find /servers/server-1 -xdev -type d -exec chattr +P {} +
-              setquota -P 1000000000 1024 1024 0 0 /servers
-              quota_row=$(repquota -P -O csv /servers | grep "^#1000000000,")
-              IFS=, read -r project block_status file_status used soft hard rest <<<"$quota_row"
-              test "$project" = "#1000000000"
-              test "$soft" = 1024
-              test "$hard" = 1024
-              attributes=$(lsattr -d -p /servers/server-1)
-              set -- $attributes
-              test "$1" = 1000000000
-              case "$2" in *P*) ;; *) exit 1 ;; esac
-              set +e
-              setpriv --reuid=10001 --regid=10001 --clear-groups dd if=/dev/zero of=/servers/server-1/exhaustion.bin bs=1M count=4 conv=fsync status=none
-              write_status=$?
-              set -e
-              test "$write_status" -ne 0
-            '
-
   build-local:
     # The verifier pins the keyless certificate identity to main.  A manually
     # dispatched build from another ref is not release evidence and must not
@@ -335,6 +259,18 @@ jobs:
       - uses: hashicorp/setup-packer@ce93c3c08a6c2ff2275bf4b54ff0d9a75f6c9789 # v3
         with:
           version: '1.14.2'
+      - name: Prove privileged node kernel boundaries on the KVM runner
+        run: |
+          docker build \
+            --file infra/images/Dockerfile.validation \
+            --tag gridora-node-validation:ci \
+            infra/images
+          docker run --rm --privileged --user 0:0 -v "$PWD:/workspace:ro" \
+            gridora-node-validation:ci \
+            /workspace/infra/scripts/validate-firewall-docker-networking.sh
+          docker run --rm --privileged --user 0:0 -v "$PWD:/workspace:ro" \
+            gridora-node-validation:ci \
+            /workspace/infra/scripts/validate-project-quota.sh
       - uses: anchore/sbom-action/download-syft@f8bdd1d8ac5e901a77a92f111440fdb1b593736b # v0.20.6
       - uses: anchore/scan-action/download-grype@e1165082ffb1fe366ebaf02d8526e7c4989ea9d2 # v7
       - uses: sigstore/cosign-installer@d7543c93d881b35a8faa02e8e3605f69b7a1ce62 # v3.10.0

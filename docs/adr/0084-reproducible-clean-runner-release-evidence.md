@@ -42,10 +42,13 @@ against the committed services, sockets, and paths.
 
 Build one disposable validation tool image from the pinned Ubuntu digest
 before granting privilege. Install cloud-init, systemd, Docker, nftables, and
-quota tooling in that build. Run the privileged nested-Docker firewall and
-ext4 quota checks from the immutable image as explicit container UID and GID 0. Those checks exercise root-only host contracts; they must not inherit an
-ambiguous user mapping or require package-manager writes after privilege is
-granted.
+quota tooling in that build. The hosted validation job uses it for cloud-init
+and systemd checks. Run the privileged nested-Docker firewall and ext4 quota
+checks from the immutable image as explicit container UID and GID 0 on the
+protected self-hosted Linux KVM image-builder. Those checks exercise root-only
+host contracts; they must not inherit an ambiguous user mapping, require
+package-manager writes after privilege is granted, or report success on a
+hosted runner that does not grant network and mount capabilities.
 
 Use the successful check-run names from the published commit as the source of
 truth for branch protection. Gate every workflow environment that can reach a
@@ -63,8 +66,10 @@ that the provisioned node image supplies.
 
 The workspace build occurs earlier in CI, the Node image job builds one
 disposable validation image, and the lockfile carries two additional platform
-hashes. Environment review and repository rules intentionally make live
-releases require an explicit GitHub action after code verification.
+hashes. Hosted push validation cannot claim a privileged kernel proof. That
+proof is a required step of the protected artifact-bearing KVM image build.
+Environment review and repository rules intentionally make live releases
+require an explicit GitHub action after code verification.
 
 ## Verification
 

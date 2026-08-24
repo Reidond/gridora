@@ -3275,8 +3275,9 @@ COMMERCIAL_REVIEW_REQUIRED` public envelope. Workflow check and 29 tests,
   a validation-only nftables unit before `systemd-analyze verify`. Build one
   tool image from the pinned Ubuntu digest before privilege is granted, then
   run the firewall and quota validation containers as UID/GID 0 without APT
-  mutations. Create the four workflow environments with a required reviewer
-  and no credentials.
+  mutations on the protected self-hosted KVM image-builder. Do not claim those
+  kernel capabilities from the hosted push runner. Create the four workflow
+  environments with a required reviewer and no credentials.
 - Result: The exact Wrangler binding check, Linux Terraform initialization and
   validation, and Ubuntu cloud-init/systemd verification pass locally. The
   environment review boundary exists without triggering a deployment.

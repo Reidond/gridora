@@ -12,6 +12,7 @@ RUN apt-get update \
     nftables \
     openssl \
     quota \
+    shellcheck \
     systemd \
     util-linux \
   && rm -rf /var/lib/apt/lists/*
