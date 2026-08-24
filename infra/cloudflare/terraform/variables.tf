@@ -30,7 +30,7 @@ variable "enable_access_applications" {
 
 variable "zone_name" {
   type        = string
-  default     = "gridora.example"
+  default     = "coasts.red"
   description = "Managed Cloudflare zone that owns the reviewed Gridora hostnames"
   validation {
     condition     = can(regex("^[a-z0-9](?:[a-z0-9-]{0,62}\\.)+[a-z]{2,63}$", var.zone_name))
@@ -40,57 +40,57 @@ variable "zone_name" {
 
 variable "console_hostname" {
   type        = string
-  default     = "console.gridora.example"
+  default     = "console.gridora.coasts.red"
   description = "Authenticated Gridora console hostname"
   validation {
     condition = var.console_hostname == format(
       "%s.%s",
-      var.environment == "production" ? "console" : format("console.%s", var.environment),
+      var.environment == "production" ? "console.gridora" : format("console.%s.gridora", var.environment),
       var.zone_name,
     )
-    error_message = "console_hostname must be console.<zone_name> in production or console.<environment>.<zone_name> outside production."
+    error_message = "console_hostname must be console.gridora.<zone_name> in production or console.<environment>.gridora.<zone_name> outside production."
   }
 }
 
 variable "public_app_hostname" {
   type        = string
-  default     = "app.gridora.example"
+  default     = "gridora.coasts.red"
   description = "Public Gridora authentication-entry hostname"
   validation {
     condition = var.public_app_hostname == format(
       "%s.%s",
-      var.environment == "production" ? "app" : format("app.%s", var.environment),
+      var.environment == "production" ? "gridora" : format("%s.gridora", var.environment),
       var.zone_name,
     )
-    error_message = "public_app_hostname must be app.<zone_name> in production or app.<environment>.<zone_name> outside production."
+    error_message = "public_app_hostname must be gridora.<zone_name> in production or <environment>.gridora.<zone_name> outside production."
   }
 }
 
 variable "api_hostname" {
   type        = string
-  default     = "api.gridora.example"
+  default     = "api.gridora.coasts.red"
   description = "Access-protected Gridora API hostname"
   validation {
     condition = var.api_hostname == format(
       "%s.%s",
-      var.environment == "production" ? "api" : format("api.%s", var.environment),
+      var.environment == "production" ? "api.gridora" : format("api.%s.gridora", var.environment),
       var.zone_name,
     )
-    error_message = "api_hostname must be api.<zone_name> in production or api.<environment>.<zone_name> outside production."
+    error_message = "api_hostname must be api.gridora.<zone_name> in production or api.<environment>.gridora.<zone_name> outside production."
   }
 }
 
 variable "dns_target_hostname" {
   type        = string
-  default     = "nodes.gridora.example"
+  default     = "nodes.gridora.coasts.red"
   description = "Reviewed DNS target hostname used for game-node records"
   validation {
     condition = var.dns_target_hostname == format(
       "%s.%s",
-      var.environment == "production" ? "nodes" : format("nodes.%s", var.environment),
+      var.environment == "production" ? "nodes.gridora" : format("nodes.%s.gridora", var.environment),
       var.zone_name,
     )
-    error_message = "dns_target_hostname must be nodes.<zone_name> in production or nodes.<environment>.<zone_name> outside production."
+    error_message = "dns_target_hostname must be nodes.gridora.<zone_name> in production or nodes.<environment>.gridora.<zone_name> outside production."
   }
 }
 

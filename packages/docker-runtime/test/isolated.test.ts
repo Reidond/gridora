@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import {
   assertPluginNetwork,
+  decodeDockerLogOutput,
   isolatedJobCreateBody,
   isAdoptableIsolatedJob,
   type IsolatedJobSpec,
+  validateIsolatedImageEnvironment,
 } from '../src/index.js'
 
 const image = `sha256:${'a'.repeat(64)}`
@@ -103,6 +105,24 @@ describe('isolated plugin job admission', () => {
     const inspected = () => JSON.stringify({ Config: config, HostConfig: body.HostConfig })
     expect(isAdoptableIsolatedJob(inspected(), spec)).toBe(true)
 
+    expect(
+      isAdoptableIsolatedJob(
+        JSON.stringify({
+          Config: config,
+          HostConfig: {
+            ...(body.HostConfig as Record<string, unknown>),
+            Binds: [...((body.HostConfig as Record<string, unknown>).Binds as string[])].reverse(),
+            CgroupParent: '',
+            IpcMode: 'private',
+            PidMode: '',
+            UTSMode: '',
+            UsernsMode: '',
+          },
+        }),
+        spec,
+      ),
+    ).toBe(true)
+
     const host = body.HostConfig as Record<string, unknown>
     expect(
       isAdoptableIsolatedJob(
@@ -182,6 +202,63 @@ describe('isolated plugin job admission', () => {
         spec,
       ),
     ).toBe(false)
+  })
+
+  it('adopts only the exact safe environment merged from the pinned image and plan', () => {
+    const imageEnvironment = ['PATH=/usr/local/bin:/usr/bin', 'RUNTIME_VERSION=1.2.3']
+    const body = isolatedJobCreateBody(spec)
+    const config = {
+      Image: body.Image,
+      Entrypoint: body.Entrypoint,
+      Cmd: body.Cmd,
+      WorkingDir: body.WorkingDir,
+      User: body.User,
+      Env: [...imageEnvironment, ...(body.Env as string[])],
+      Labels: body.Labels,
+    }
+    expect(
+      validateIsolatedImageEnvironment(
+        JSON.stringify({ Id: image, Config: { Env: imageEnvironment } }),
+        image,
+      ),
+    ).toEqual(imageEnvironment)
+    expect(
+      isAdoptableIsolatedJob(
+        JSON.stringify({ Config: config, HostConfig: body.HostConfig }),
+        spec,
+        imageEnvironment,
+      ),
+    ).toBe(true)
+    expect(
+      isAdoptableIsolatedJob(
+        JSON.stringify({
+          Config: { ...config, Env: [...config.Env, 'INJECTED=value'] },
+          HostConfig: body.HostConfig,
+        }),
+        spec,
+        imageEnvironment,
+      ),
+    ).toBe(false)
+    expect(() =>
+      validateIsolatedImageEnvironment(
+        JSON.stringify({ Id: image, Config: { Env: ['API_TOKEN=unsafe'] } }),
+        image,
+      ),
+    ).toThrow(/unsafe/i)
+  })
+
+  it('decodes bounded Docker stdout and stderr frames without control headers', () => {
+    const frame = (stream: 1 | 2, value: string) => {
+      const payload = Buffer.from(value)
+      const header = Buffer.alloc(8)
+      header[0] = stream
+      header.writeUInt32BE(payload.length, 4)
+      return Buffer.concat([header, payload])
+    }
+    expect(
+      decodeDockerLogOutput(Buffer.concat([frame(1, 'buildid=1874900001\n'), frame(2, 'warn\n')])),
+    ).toBe('buildid=1874900001\nwarn\n')
+    expect(decodeDockerLogOutput(Buffer.from('plain log\n'))).toBe('plain log\n')
   })
 
   it('requires the root-provisioned egress policy label before accepting a network', () => {

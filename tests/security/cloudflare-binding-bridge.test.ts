@@ -56,20 +56,21 @@ describe('Cloudflare environment binding bridge', () => {
     const apiDurableObjects = (
       api.durable_objects as { bindings: ReadonlyArray<Record<string, string>> }
     ).bindings
+    const apiSecretsStore = api.secrets_store_secrets as ReadonlyArray<Record<string, string>>
 
     expect(api.name).toBe('gridora-staging-api')
     expect(web.name).toBe('gridora-staging-web')
     expect(api.workers_dev).toBe(false)
     expect(api.preview_urls).toBe(false)
-    expect(api.routes).toEqual([{ pattern: 'api.staging.gridora.example', custom_domain: true }])
+    expect(api.routes).toEqual([{ pattern: 'api.staging.gridora.coasts.red', custom_domain: true }])
     expect(templateApi.routes).toEqual([
-      { pattern: 'api.staging.gridora.example', custom_domain: true },
+      { pattern: 'api.staging.gridora.coasts.red', custom_domain: true },
     ])
     expect(web.workers_dev).toBe(false)
     expect(web.preview_urls).toBe(false)
     expect(web.routes).toEqual([
-      { pattern: 'app.staging.gridora.example', custom_domain: true },
-      { pattern: 'console.staging.gridora.example', custom_domain: true },
+      { pattern: 'staging.gridora.coasts.red', custom_domain: true },
+      { pattern: 'console.staging.gridora.coasts.red', custom_domain: true },
     ])
     expect(apiD1).toMatchObject({
       database_name: 'gridora-staging',
@@ -85,6 +86,13 @@ describe('Cloudflare environment binding bridge', () => {
     expect(apiDurableObjects).toContainEqual(
       expect.objectContaining({ script_name: 'gridora-staging-realtime' }),
     )
+    expect(apiSecretsStore.map((binding) => binding.secret_name)).toEqual([
+      'gridora-staging-provider-kek-v1',
+      'gridora-staging-provider-kek-v2',
+      'gridora-staging-cloudflare-tunnel-api-token',
+      'gridora-staging-cloudflare-dns-api-token',
+      'gridora-staging-agent-command-signing-key',
+    ])
     expect(workflows.name).toBe('gridora-staging-workflows')
     expect(workflows.services).toEqual([{ binding: 'APPLICATION', service: 'gridora-staging-api' }])
     expect(consumers.name).toBe('gridora-staging-queue-consumers')
@@ -95,7 +103,7 @@ describe('Cloudflare environment binding bridge', () => {
       expect(serviceOrEventWorker).not.toHaveProperty('routes')
     }
     expect((consumers.vars as Record<string, string>).PUBLIC_APP_URL).toBe(
-      'https://app.staging.gridora.example',
+      'https://staging.gridora.coasts.red',
     )
     expect(
       (consumers.queues as { consumers: ReadonlyArray<Record<string, string>> }).consumers,
@@ -143,10 +151,10 @@ describe('Cloudflare environment binding bridge', () => {
         environment: 'production',
         resourcePrefix: 'gridora-production',
         accessAudience: 'gridora-production-audience',
-        apiHostname: 'api.gridora.example',
-        publicAppHostname: 'app.gridora.example',
-        consoleHostname: 'console.gridora.example',
-        dnsTarget: 'nodes.gridora.example',
+        apiHostname: 'api.gridora.coasts.red',
+        publicAppHostname: 'gridora.coasts.red',
+        consoleHostname: 'console.gridora.coasts.red',
+        dnsTarget: 'nodes.gridora.coasts.red',
       }),
     )
     const outputDirectory = join(temporary, 'rendered')
@@ -165,10 +173,10 @@ describe('Cloudflare environment binding bridge', () => {
 
     const api = await json(join(outputDirectory, 'apps/api/wrangler.jsonc'))
     const web = await json(join(outputDirectory, 'apps/web/wrangler.jsonc'))
-    expect(api.routes).toEqual([{ pattern: 'api.gridora.example', custom_domain: true }])
+    expect(api.routes).toEqual([{ pattern: 'api.gridora.coasts.red', custom_domain: true }])
     expect(web.routes).toEqual([
-      { pattern: 'app.gridora.example', custom_domain: true },
-      { pattern: 'console.gridora.example', custom_domain: true },
+      { pattern: 'gridora.coasts.red', custom_domain: true },
+      { pattern: 'console.gridora.coasts.red', custom_domain: true },
     ])
   })
 
@@ -176,11 +184,11 @@ describe('Cloudflare environment binding bridge', () => {
     const temporary = await temporaryDirectory('gridora-cloudflare-hostname-fence-')
     const source = await json(resolve(root, 'infra/cloudflare/environment.ci.json'))
     const invalidHostnames = [
-      ['apiHostname', 'api.gridora.example'],
-      ['publicAppHostname', 'app.gridora.example'],
-      ['consoleHostname', 'console.gridora.example'],
-      ['dnsTarget', 'nodes.gridora.example'],
-      ['apiHostname', 'api.staging.other-zone.example'],
+      ['apiHostname', 'api.gridora.coasts.red'],
+      ['publicAppHostname', 'gridora.coasts.red'],
+      ['consoleHostname', 'console.gridora.coasts.red'],
+      ['dnsTarget', 'nodes.gridora.coasts.red'],
+      ['apiHostname', 'api.staging.gridora.other-zone.example'],
     ] as const
 
     for (const [field, value] of invalidHostnames) {

@@ -13,6 +13,7 @@
     "format:write": "vp fmt . --write",
     "lint": "vp lint",
     "test": "vp test --run",
+    "test:arma-sim": "infra/scripts/run-simulated-arma-vps.sh",
     "test:cloudflare": "tsc --noEmit -p tests/cloudflare/tsconfig.json --pretty false && vitest run --config tests/cloudflare/vitest.config.ts",
     "test:watch": "vp test",
     "typecheck": "vp check --no-fmt --no-lint",

@@ -48,11 +48,12 @@ BEGIN
       ) > 1
     );
 
-  SELECT CASE WHEN EXISTS (
+  SELECT RAISE(ABORT, 'organization membership leave fence failed')
+  WHERE EXISTS (
     SELECT 1 FROM organization_memberships
     WHERE organization_id = NEW.organization_id
       AND identity_id = NEW.identity_id
-  ) THEN RAISE(ABORT, 'organization membership leave fence failed') END;
+  );
 
   INSERT INTO outbox
     (id, organization_id, event_type, aggregate_type, aggregate_id, payload_json,
@@ -90,7 +91,8 @@ BEGIN
     NEW.left_at
   );
 
-  SELECT CASE WHEN NOT EXISTS (
+  SELECT RAISE(ABORT, 'organization membership leave evidence fence failed')
+  WHERE NOT EXISTS (
     SELECT 1 FROM outbox
     WHERE id = NEW.outbox_event_id
       AND organization_id = NEW.organization_id
@@ -104,5 +106,5 @@ BEGIN
       AND target_id = NEW.identity_id
       AND action = 'organization.membership.leave'
       AND result = 'succeeded'
-  ) THEN RAISE(ABORT, 'organization membership leave evidence fence failed') END;
+  );
 END;

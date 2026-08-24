@@ -49,10 +49,11 @@ describe('createContainerPlan', () => {
     })
     expect(JSON.stringify(plan)).not.toContain('docker.sock')
     expect(dockerCreateBody(plan)).toMatchObject({
+      ExposedPorts: { '2001/udp': {} },
       HostConfig: { Privileged: false, ReadonlyRootfs: true, CapDrop: ['ALL'] },
     })
     expect(dockerNetworkCreateBody(plan)).toMatchObject({
-      Internal: true,
+      Internal: false,
       Attachable: false,
     })
   })
@@ -185,7 +186,12 @@ describe('createContainerPlan', () => {
     expect(
       canAdoptContainer(
         {
-          Config: { Image: plan.image, User: plan.user, Labels: plan.labels },
+          Config: {
+            Image: plan.image,
+            User: plan.user,
+            Labels: plan.labels,
+            ExposedPorts: body.ExposedPorts,
+          },
           HostConfig: body.HostConfig,
         },
         plan,
@@ -198,6 +204,7 @@ describe('createContainerPlan', () => {
             Image: plan.image,
             User: plan.user,
             Labels: { ...plan.labels, 'dev.gridora.server': 'foreign' },
+            ExposedPorts: body.ExposedPorts,
           },
           HostConfig: body.HostConfig,
         },
@@ -207,7 +214,12 @@ describe('createContainerPlan', () => {
     expect(
       canAdoptContainer(
         {
-          Config: { Image: plan.image, User: plan.user, Labels: plan.labels },
+          Config: {
+            Image: plan.image,
+            User: plan.user,
+            Labels: plan.labels,
+            ExposedPorts: body.ExposedPorts,
+          },
           HostConfig: {
             ...(body.HostConfig as Record<string, unknown>),
             LogConfig: { Type: 'json-file', Config: {} },
@@ -216,16 +228,25 @@ describe('createContainerPlan', () => {
         plan,
       ),
     ).toBe(false)
-    expect(canAdoptNetwork({ Internal: true, Attachable: false, Labels: plan.labels }, plan)).toBe(
+    expect(
+      canAdoptContainer(
+        {
+          Config: { Image: plan.image, User: plan.user, Labels: plan.labels, ExposedPorts: {} },
+          HostConfig: body.HostConfig,
+        },
+        plan,
+      ),
+    ).toBe(false)
+    expect(canAdoptNetwork({ Internal: false, Attachable: false, Labels: plan.labels }, plan)).toBe(
       true,
     )
-    expect(canAdoptNetwork({ Internal: false, Attachable: false, Labels: plan.labels }, plan)).toBe(
+    expect(canAdoptNetwork({ Internal: true, Attachable: false, Labels: plan.labels }, plan)).toBe(
       false,
     )
     expect(
       canAdoptNetwork(
         {
-          Internal: true,
+          Internal: false,
           Attachable: false,
           Labels: { ...plan.labels, 'dev.gridora.organization': 'foreign' },
         },

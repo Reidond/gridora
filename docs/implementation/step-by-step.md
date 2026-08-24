@@ -7,9 +7,11 @@ reviewable deployment or image template exists. The status `live-blocked` means
 that a required live dependency, approval, or production adapter does not exist.
 The status `pending` means that the final repository-wide check is not recorded.
 
-This record describes a public pre-alpha implementation. This record does not claim
-an MVP, a production release, a Cloudflare deployment, a provider deployment, a
-promoted node image, a game installation, or a delivered email.
+This record describes a public pre-alpha implementation and a live production
+Cloudflare control plane. This record does not claim a promoted provider image,
+a paid provider deployment, a real Steam or Arma Reforger installation, a sent
+invitation email, or a published GitHub production release unless a later step
+records that evidence.
 
 Each material step has one `Decision` entry. The entry points to the ADR that
 controls the implementation. A procedural step can use an ADR that controls its
@@ -892,7 +894,7 @@ and fixed terms are part of the STE rule for this record.
 
 ## Step 57: Complete repository-wide verification
 
-- Status: pending
+- Status: local
 - Action: Run `pnpm install --frozen-lockfile`.
 - Action: Run `pnpm format`.
 - Action: Run `pnpm lint`.
@@ -910,7 +912,7 @@ and fixed terms are part of the STE rule for this record.
 
 ## Step 58: Publish the implementation commit
 
-- Status: pending
+- Status: local
 - Action: Commit the reviewed implementation after step 57 passes.
 - Action: Push the commit to the public `main` branch.
 - Action: Check the GitHub Actions result.
@@ -3299,3 +3301,147 @@ COMMERCIAL_REVIEW_REQUIRED` public envelope. Workflow check and 29 tests,
   Those operations still require reviewed credentials and an explicit live
   deployment decision.
 - Decision: ADR 0084.
+
+## Step 109: Simulate one Arma node and deploy the protected production control plane
+
+- Status: pending
+- Situation: Local fakes did not exercise the Docker Engine API, UDP health,
+  configuration rollback, or Docker log framing. No live Cloudflare environment
+  served the selected `gridora.coasts.red` product namespace.
+- Task: Prove the node orchestration boundary without paid infrastructure or
+  proprietary game content. Deploy the production Cloudflare control plane only
+  after Access, tenant resources, migrations, and secrets exist.
+- Action: Run a rootful nested Docker daemon inside one disposable privileged
+  simulated VPS container. Load the node image's nftables policy. Run only the
+  nested game container as an unprivileged user. Install a deterministic fake
+  game through the production Arma plugin. Apply config and mods. Start the
+  server. Verify UDP and plugin health. Update it. Roll back invalid config.
+  Stop it. Remove all nested resources with the disposable outer boundary.
+- Action: Correct the Arma install root and config path. Add exact Engine API
+  `ExposedPorts`. Keep the tenant bridge publishable and the nftables forward
+  policy default-deny. Decode multiplexed Docker logs. Require exact image,
+  digest, environment, port, and network evidence before adoption.
+- Action: Set the production public, console, API, and node names to
+  `gridora.coasts.red`, `console.gridora.coasts.red`,
+  `api.gridora.coasts.red`, and `nodes.gridora.coasts.red`. Keep staging under a
+  separate namespace and resource prefix.
+- Action: Create one shared console and API Access application. Enable exact
+  credentialed CORS, HTTP-only binding cookies, eager redirect cookies, and
+  Managed OAuth. Use a 15-minute access token and a two-week refresh grant.
+- Action: Create three more-specific applications. Bypass the browser login only
+  for `/v1/auth/intents`, `/v1/agent/*`, and `/v1/internal/*`. Keep the exact
+  Worker authentication checks on each path.
+- Action: Create production-only D1, R2, Queue, dead-letter Queue, Secrets Store,
+  and Worker resources. Use a DNS token restricted to DNS Write on `coasts.red`.
+  Use a separate Cloudflare Tunnel Write token. Give both tokens a one-year
+  expiry. Do not print their values. Remove every local token and private-key
+  upload file after Secrets Store activation.
+- Action: Change five trigger assertions to the D1-compatible
+  `SELECT RAISE(...) WHERE ...` form. Add a regression test. Apply all 63
+  migrations before traffic.
+- Action: Deploy realtime, a route-free API bootstrap, 23 Workflows, Queue
+  consumers, the complete API, and the web Worker in dependency order. Retry one
+  transient Queue consumer attachment after a Cloudflare 503. Keep the same
+  Worker secrets during the retry.
+- Result: Production Worker versions are realtime
+  `685e0e39-6f8a-46e8-a3ea-dec227f5a1f5`, workflows
+  `8b9378e2-1506-4fde-96cc-ea169072156e`, Queue consumers
+  `50ca84d9-6561-4bbe-b7db-26f2b76813cb`, API
+  `1cadb2f8-7620-4694-aa0f-ee38edc004d0`, and web
+  `5fa6d054-c921-42c2-8698-dc2843ac1d9c`.
+- Evidence: `infra/simulation/arma-vps`,
+  `infra/scripts/run-simulated-arma-vps.sh`, Docker runtime and Arma plugin
+  tests, migration 0026/0028/0030/0031/0055 repairs, production D1
+  `dda23e01-30d4-406c-8a34-164f62d9cbd4`, and ADR 0085.
+- Verification: `pnpm test:arma-sim` passes. Docker runtime tests pass. Arma
+  plugin tests pass. The final `pnpm run ci` gate reports 890 formatted files,
+  zero lint or type errors across 522 files, 226 passing test files with 1,494
+  passing tests, and 112 successful package or application builds. The live
+  Docker boundary, Cloudflare tests, generated bindings, CI and production
+  Worker dry-runs, Terraform validation and no-resource default plan, package
+  audit, and CI-profile Trivy scan pass.
+- Verification: The production D1 reports 63 migrations in WEUR. The five
+  production Secrets Store entries are active. Email Sending is enabled for
+  `mail.gridora.coasts.red`; MX, SPF, DKIM, and reject-DMARC resolve publicly.
+- Verification: Public sign-in and sign-up return HTML. The console and ordinary
+  API reject a request without Access. The invalid auth intent returns a Gridora
+  400 response and allows only `https://gridora.coasts.red`. The unauthenticated
+  agent and internal requests reach Gridora and fail closed. A clean browser
+  reaches the Cloudflare Access sign-in page for the production console.
+- Constraint: The simulation does not install SteamCMD or Arma Reforger. It does
+  not boot a signed provider image or create a paid VPS. The protected image
+  workflow and simulated provider smoke remain separate release evidence.
+- Decision: ADR 0085.
+
+## Step 110: Publish the protected production release candidate
+
+- Status: local
+- Situation: The public repository still contained only the earlier pre-alpha
+  implementation. The live Cloudflare deployment and Docker VPS evidence needed
+  one reviewable source commit and one protected pull request.
+- Task: Publish the exact release candidate without bypassing main pull-request,
+  required checks, tag rules, or release-environment approval.
+- Action: Commit the implementation as `341bb4f`. Push branch
+  `release/live-staging-arma-simulation`. Open public pull request 7 against
+  `main`.
+- Action: Re-read main protection. Initially require a current approving review,
+  strict status checks, and enforcement for administrators. Re-read the
+  production release environment. Initially disable self-review and
+  administrator bypass.
+- Action: Enable the GitHub dependency graph after the first dependency-review
+  job reports that the new repository does not support the check. Re-run only
+  the failed Security job. Keep dependency review enabled.
+- Evidence: GitHub pull request 7 and commit `341bb4f` in public repository
+  `Reidond/gridora`.
+- Verification: The remote branch contains the reviewed source commit. GitHub
+  reports required main checks `verify`, `cloudflare-config`,
+  `dependency-and-secret-scan`, and `validate` with strict review enforcement.
+- Verification: CI, Security, dependency review, Trivy, and Node image
+  validation pass on the published release candidate. The pull request is
+  mergeable. GitHub reports `REVIEW_REQUIRED` as the only merge gate.
+- Blocker: The initial independent-review model cannot complete in a repository
+  with one collaborator because GitHub does not count the author's own pull
+  request review. Step 111 records the owner's explicit replacement decision.
+- Decision: ADR 0084.
+
+## Step 111: Adopt truthful single-owner approval and ephemeral release evidence
+
+- Status: pending
+- Situation: Gridora has one repository owner and no independent collaborator.
+  GitHub cannot count the author as the approving reviewer of their own pull
+  request, but it can require an explicit deployment approval from that owner
+  when self-review is allowed on a protected environment.
+- Task: Let the owner approve signing, simulated provider smoke, and production
+  publication without weakening automated correctness or security gates.
+- Action: Keep pull requests mandatory and set the required approving review
+  count to zero. Keep strict required status checks, administrator enforcement,
+  linear history, conversation resolution, and the force-push and deletion
+  prohibitions. Do not manufacture an approval record.
+- Action: Keep the repository owner as required reviewer for `image-signing`,
+  `provider-image-smoke`, and `production-release`. Allow self-review and disable
+  administrator bypass so each protected deployment still needs an explicit
+  approval.
+- Action: Replace the long-lived release-evidence secret with GitHub's ephemeral
+  per-job token. Prove the remote semantic tag, exact merged pull-request commit
+  on `main`, exact push CI and Security runs, and exact protected signed image
+  and simulated-provider evidence before publication.
+- Result: The only human owner can approve every protected deployment. The
+  release cannot proceed through a direct branch push, missing required check,
+  stale commit, validation-only image run, expired image artifact, mutable tag,
+  or unapproved environment.
+- Evidence: `.github/workflows/release.yml`,
+  `tests/architecture/release-workflow.test.ts`, the three protected GitHub
+  environments, main branch protection, and version-tag ruleset 21286351.
+- Verification: The release-workflow and documentation tests pass 6 tests. The
+  complete `pnpm run ci` gate reports 891 correctly formatted files, zero lint
+  or type errors across 522 files, 226 passing test files with 1,494 passing
+  tests, and 112 successful builds. GitHub reports zero required approvals, all
+  four strict check contexts, administrator enforcement, linear history,
+  conversation resolution, and no force push or deletion. All three
+  environments require Reidond, allow self-review, and prohibit administrator
+  bypass. Tag ruleset 21286351 is active for `refs/tags/v*`, prohibits updates
+  and deletions, has no exclusions or bypass actors, and reports that the
+  current user can never bypass it.
+- Blocker: Pull request checks, merge, exact signed image build,
+  simulated-provider smoke, semantic tag, and protected release remain.
+- Decision: ADR 0086.

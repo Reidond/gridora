@@ -16,6 +16,20 @@ describe('Arma Reforger plugin', () => {
       protocol: false,
       status: 'unhealthy',
     }))
+  it('installs Steam content only into the mounted game directory', async () => {
+    const plan = await Effect.runPromise(agent.installPlan('/var/lib/gridora/servers/fixture'))
+    expect(plan.workingDirectory).toBe('/var/lib/gridora/servers/fixture/game')
+    expect(plan.arguments).toContain('/var/lib/gridora/servers/fixture/game')
+  })
+  it('validates and launches the exact rendered configuration path', async () => {
+    const root = '/var/lib/gridora/servers/fixture'
+    const launch = await Effect.runPromise(agent.launchPlan(root, `${root}/config`))
+    const activation = await Effect.runPromise(
+      runtime.activationPlan(root, `${root}/staging/config-1`),
+    )
+    expect(launch.arguments).toContain(`${root}/config/config/server.json`)
+    expect(activation[0]?.arguments).toContain(`${root}/staging/config-1/config/server.json`)
+  })
   it('redacts password logs', () =>
     expect(agent.parseLog('password=secret').message).not.toContain('secret'))
   it('orders transitive dependencies before requested mods', async () => {

@@ -67,6 +67,7 @@ const ALLOWED_ENVIRONMENT_KEYS = new Set([
   'STEAMCMD_HOME',
 ])
 const SECRET_MARKER = /(password|secret|token|credential|authorization|bearer|private[_-]?key|pem)/i
+const ENVIRONMENT_KEY = /^[A-Z_][A-Z0-9_]{0,63}$/
 
 const safeSegment = (value: string): boolean =>
   /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(value) && value !== '.' && value !== '..'
@@ -276,9 +277,28 @@ export const isolatedJobCreateBody = (spec: IsolatedJobSpec): Readonly<Record<st
   }
 }
 
-const boundedBody = (chunks: Buffer[]): string => {
-  const body = Buffer.concat(chunks).subarray(0, MAX_OUTPUT_BYTES)
-  return body.toString('utf8')
+export const decodeDockerLogOutput = (body: Buffer): string => {
+  const output: Buffer[] = []
+  let offset = 0
+  while (offset + 8 <= body.length) {
+    const stream = body[offset]
+    if (
+      (stream !== 1 && stream !== 2) ||
+      body[offset + 1] !== 0 ||
+      body[offset + 2] !== 0 ||
+      body[offset + 3] !== 0
+    )
+      return body.toString('utf8')
+    const length = body.readUInt32BE(offset + 4)
+    const start = offset + 8
+    const end = start + length
+    if (end > body.length) return body.toString('utf8')
+    output.push(body.subarray(start, end))
+    offset = end
+  }
+  return offset === body.length && output.length > 0
+    ? Buffer.concat(output).toString('utf8')
+    : body.toString('utf8')
 }
 
 const dockerRequest = (
@@ -326,7 +346,13 @@ const dockerRequest = (
                 )
                 return
               }
-              resolve({ status, body: boundedBody(chunks) })
+              const responseBody = Buffer.concat(chunks).subarray(0, MAX_OUTPUT_BYTES)
+              resolve({
+                status,
+                body: path.includes('/logs?')
+                  ? decodeDockerLogOutput(responseBody)
+                  : responseBody.toString('utf8'),
+              })
             })
           },
         )
@@ -356,7 +382,65 @@ const dockerRequest = (
  * Docker name is not an identity: a foreign same-name container must never be
  * started, reused, or removed by the cleanup path.
  */
-export const isAdoptableIsolatedJob = (body: string, spec: IsolatedJobSpec): boolean => {
+const mergeEnvironment = (
+  imageEnvironment: readonly string[],
+  planEnvironment: Readonly<Record<string, string>>,
+): readonly string[] => {
+  const merged = new Map<string, string>()
+  for (const entry of imageEnvironment) {
+    const separator = entry.indexOf('=')
+    if (separator <= 0) throw new Error('image environment entry is malformed')
+    merged.set(entry.slice(0, separator), entry.slice(separator + 1))
+  }
+  for (const [key, value] of Object.entries(planEnvironment)) merged.set(key, value)
+  return [...merged].map(([key, value]) => `${key}=${value}`)
+}
+
+export const validateIsolatedImageEnvironment = (
+  body: string,
+  expectedImage: string,
+): readonly string[] => {
+  try {
+    const inspected = JSON.parse(body) as Record<string, unknown>
+    const config = inspected.Config as Record<string, unknown> | undefined
+    const environment = config?.Env
+    if (
+      inspected.Id !== expectedImage ||
+      (environment !== undefined && environment !== null && !Array.isArray(environment))
+    )
+      throw new Error('image identity or environment shape does not match')
+    const entries = (environment ?? []) as unknown[]
+    if (
+      entries.length > 64 ||
+      entries.some((entry) => {
+        if (typeof entry !== 'string' || entry.length > MAX_ARGUMENT_LENGTH || entry.includes('\0'))
+          return true
+        const separator = entry.indexOf('=')
+        return (
+          separator <= 0 ||
+          !ENVIRONMENT_KEY.test(entry.slice(0, separator)) ||
+          SECRET_MARKER.test(entry)
+        )
+      })
+    )
+      throw new Error('image environment is unsafe')
+    const typed = entries as string[]
+    if (new Set(typed.map((entry) => entry.slice(0, entry.indexOf('=')))).size !== typed.length)
+      throw new Error('image environment keys are duplicated')
+    return typed
+  } catch (cause) {
+    throw new IsolatedJobError({
+      code: 'invalid',
+      message: `isolated job image metadata is unsafe: ${String(cause)}`,
+    })
+  }
+}
+
+export const isAdoptableIsolatedJob = (
+  body: string,
+  spec: IsolatedJobSpec,
+  imageEnvironment: readonly string[] = [],
+): boolean => {
   try {
     const inspected = JSON.parse(body) as Record<string, unknown>
     const config = inspected.Config as Record<string, unknown> | undefined
@@ -365,10 +449,11 @@ export const isAdoptableIsolatedJob = (body: string, spec: IsolatedJobSpec): boo
     const expectedConfig = expected
     const expectedHost = expected.HostConfig as Record<string, unknown>
     const expectedLabels = expected.Labels as Record<string, string>
-    const expectedEnv = expected.Env as readonly string[]
+    const expectedEnv = mergeEnvironment(imageEnvironment, spec.environment)
     const empty = (value: unknown): boolean =>
       value === undefined ||
       value === null ||
+      value === '' ||
       (Array.isArray(value) && value.length === 0) ||
       (typeof value === 'object' &&
         value !== null &&
@@ -389,16 +474,46 @@ export const isAdoptableIsolatedJob = (body: string, spec: IsolatedJobSpec): boo
     const actualEnv = Array.isArray(config?.Env)
       ? config.Env.filter((value): value is string => typeof value === 'string')
       : []
+    const exactStrings = (actual: unknown, expectedValue: unknown): boolean =>
+      Array.isArray(actual) &&
+      Array.isArray(expectedValue) &&
+      actual.every((value): value is string => typeof value === 'string') &&
+      expectedValue.every((value): value is string => typeof value === 'string') &&
+      JSON.stringify([...actual].sort()) === JSON.stringify([...expectedValue].sort())
+    const exactRecord = (actual: unknown, expectedValue: unknown): boolean => {
+      if (
+        typeof actual !== 'object' ||
+        actual === null ||
+        Array.isArray(actual) ||
+        typeof expectedValue !== 'object' ||
+        expectedValue === null ||
+        Array.isArray(expectedValue)
+      )
+        return false
+      const actualEntries = Object.entries(actual).sort(([left], [right]) =>
+        left.localeCompare(right),
+      )
+      const expectedEntries = Object.entries(expectedValue).sort(([left], [right]) =>
+        left.localeCompare(right),
+      )
+      return JSON.stringify(actualEntries) === JSON.stringify(expectedEntries)
+    }
+    const exactLogConfig = (value: unknown): boolean => {
+      if (typeof value !== 'object' || value === null || Array.isArray(value)) return false
+      const actual = value as Record<string, unknown>
+      const expectedLog = expectedHost.LogConfig as Record<string, unknown>
+      return actual.Type === expectedLog.Type && exactRecord(actual.Config, expectedLog.Config)
+    }
     return (
       config?.Image === expectedConfig.Image &&
       JSON.stringify(config?.Entrypoint) === JSON.stringify([]) &&
       config?.User === expectedConfig.User &&
       config?.WorkingDir === expectedConfig.WorkingDir &&
       JSON.stringify(config?.Cmd) === JSON.stringify(expectedConfig.Cmd) &&
-      JSON.stringify(config?.Labels) === JSON.stringify(expectedLabels) &&
+      exactRecord(config?.Labels, expectedLabels) &&
       JSON.stringify([...actualEnv].sort()) === JSON.stringify([...expectedEnv].sort()) &&
       actualEnv.every((value) => !SECRET_MARKER.test(value)) &&
-      JSON.stringify(hostConfig?.Binds) === JSON.stringify(expectedHost.Binds) &&
+      exactStrings(hostConfig?.Binds, expectedHost.Binds) &&
       hostConfig?.NetworkMode === 'gridora-plugin-egress' &&
       hostConfig?.Privileged === false &&
       hostConfig?.ReadonlyRootfs === true &&
@@ -430,14 +545,14 @@ export const isAdoptableIsolatedJob = (body: string, spec: IsolatedJobSpec): boo
       empty(hostConfig?.StorageOpt) &&
       empty(hostConfig?.CgroupParent) &&
       empty(hostConfig?.PidMode) &&
-      empty(hostConfig?.IpcMode) &&
+      (empty(hostConfig?.IpcMode) || hostConfig?.IpcMode === 'private') &&
       empty(hostConfig?.UTSMode) &&
       empty(hostConfig?.UsernsMode) &&
       hostConfig?.Memory === expectedHost.Memory &&
       hostConfig?.NanoCpus === expectedHost.NanoCpus &&
       hostConfig?.PidsLimit === expectedHost.PidsLimit &&
       JSON.stringify(hostConfig?.SecurityOpt) === JSON.stringify(expectedHost.SecurityOpt) &&
-      JSON.stringify(hostConfig?.LogConfig) === JSON.stringify(expectedHost.LogConfig)
+      exactLogConfig(hostConfig?.LogConfig)
     )
   } catch {
     return false
@@ -448,6 +563,7 @@ const cleanupJob = (
   socketPath: string,
   name: string,
   spec: IsolatedJobSpec,
+  imageEnvironment: readonly string[],
 ): Effect.Effect<void, never> =>
   dockerRequest(
     socketPath,
@@ -458,7 +574,7 @@ const cleanupJob = (
     15_000,
   ).pipe(
     Effect.flatMap((inspected) =>
-      inspected.status === 404 || !isAdoptableIsolatedJob(inspected.body, spec)
+      inspected.status === 404 || !isAdoptableIsolatedJob(inspected.body, spec, imageEnvironment)
         ? Effect.void
         : dockerRequest(
             socketPath,
@@ -541,6 +657,21 @@ const runJob = (
           ? error
           : new IsolatedJobError({ code: 'conflict', message: String(error) }),
     })
+    const image = yield* dockerRequest(
+      socketPath,
+      'GET',
+      `/v1.43/images/${encodeURIComponent(spec.image)}/json`,
+      undefined,
+      [200],
+      15_000,
+    )
+    const imageEnvironment = yield* Effect.try({
+      try: () => validateIsolatedImageEnvironment(image.body, spec.image),
+      catch: (error) =>
+        error instanceof IsolatedJobError
+          ? error
+          : new IsolatedJobError({ code: 'invalid', message: String(error) }),
+    })
     const name = `${JOB_PREFIX}${spec.jobId}`
     const body = isolatedJobCreateBody(spec)
     return yield* Effect.gen(function* () {
@@ -561,7 +692,7 @@ const runJob = (
           [200],
           15_000,
         )
-        if (!isAdoptableIsolatedJob(inspected.body, spec))
+        if (!isAdoptableIsolatedJob(inspected.body, spec, imageEnvironment))
           return yield* Effect.fail(
             new IsolatedJobError({ code: 'conflict', message: 'existing isolated job is foreign' }),
           )
@@ -600,7 +731,7 @@ const runJob = (
           }),
         )
       return { output, exitCode }
-    }).pipe(Effect.ensuring(cleanupJob(socketPath, name, spec)))
+    }).pipe(Effect.ensuring(cleanupJob(socketPath, name, spec, imageEnvironment)))
   }).pipe(
     Effect.catch((error) =>
       error instanceof IsolatedJobError

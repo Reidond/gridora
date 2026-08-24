@@ -99,7 +99,7 @@ describe('infrastructure security boundaries', () => {
     expect(game).not.toMatch(/image:\s+[^$].*:latest/)
     expect(game).toContain('cap_drop: [ALL]')
     expect(game).toContain('no-new-privileges:true')
-    expect(game).toContain('internal: true')
+    expect(game).toContain('internal: false')
   })
 
   it('declares all private storage and scheduled queue resources in Terraform', () => {

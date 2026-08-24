@@ -661,7 +661,8 @@ CREATE TRIGGER audit_envelope_staging_source_ip_valid
 BEFORE INSERT ON audit_envelope_staging
 WHEN json_extract(NEW.envelope_json, '$.source.ip.state') = 'captured'
 BEGIN
-  SELECT CASE WHEN
+  SELECT RAISE(ABORT, 'audit source IP is invalid')
+  WHERE
     json_type(NEW.envelope_json, '$.source.ip.value') IS NOT 'text'
     OR length(json_extract(NEW.envelope_json, '$.source.ip.value')) NOT BETWEEN 3 AND 64
     OR (
@@ -781,8 +782,7 @@ BEGIN
         END
         ELSE 1
       END
-    ) = 1
-  THEN RAISE(ABORT, 'audit source IP is invalid') END;
+    ) = 1;
 END;
 
 CREATE TRIGGER audit_envelope_staging_immutable_update
@@ -1057,8 +1057,8 @@ BEGIN
     AND staging.event_id = NEW.id
     AND staging.organization_id = NEW.organization_id;
 
-  SELECT CASE WHEN changes() != 1
-    THEN RAISE(ABORT, 'audit event has no matching v1 envelope') END;
+  SELECT RAISE(ABORT, 'audit event has no matching v1 envelope')
+  WHERE changes() != 1;
 
   DELETE FROM audit_envelope_staging
   WHERE event_table = 'tenant' AND event_id = NEW.id AND organization_id = NEW.organization_id;
@@ -1102,7 +1102,8 @@ CREATE TRIGGER outbox_audit_export_namespace_guard
 BEFORE INSERT ON outbox
 WHEN NEW.event_type = 'audit.export.requested' OR NEW.aggregate_type = 'audit_event'
 BEGIN
-  SELECT CASE WHEN NOT EXISTS (
+  SELECT RAISE(ABORT, 'audit export outbox identity is invalid')
+  WHERE NOT EXISTS (
     SELECT 1
     FROM audit_export_requests request
     JOIN audit_events audit
@@ -1133,22 +1134,22 @@ BEGIN
       AND json_extract(NEW.payload_json, '$.exportRequestId') = NEW.id
       AND json_extract(NEW.payload_json, '$.admittedAt') = envelope.created_at
       AND json( json_extract(NEW.payload_json, '$.envelope') ) = json(envelope.envelope_json)
-  ) THEN RAISE(ABORT, 'audit export outbox identity is invalid') END;
+  );
 END;
 
 CREATE TRIGGER outbox_audit_export_identity_immutable
 BEFORE UPDATE ON outbox
 WHEN OLD.event_type = 'audit.export.requested' OR OLD.aggregate_type = 'audit_event'
 BEGIN
-  SELECT CASE WHEN
+  SELECT RAISE(ABORT, 'audit export outbox identity is immutable')
+  WHERE
     NEW.id IS NOT OLD.id
     OR NEW.organization_id IS NOT OLD.organization_id
     OR NEW.event_type IS NOT OLD.event_type
     OR NEW.aggregate_type IS NOT OLD.aggregate_type
     OR NEW.aggregate_id IS NOT OLD.aggregate_id
     OR NEW.payload_json IS NOT OLD.payload_json
-    OR NEW.created_at IS NOT OLD.created_at
-  THEN RAISE(ABORT, 'audit export outbox identity is immutable') END;
+    OR NEW.created_at IS NOT OLD.created_at;
 END;
 
 -- Platform audit export uses its own durable ledger. It has the same lease and
@@ -1184,12 +1185,12 @@ CREATE INDEX platform_audit_export_outbox_delivery
 CREATE TRIGGER platform_audit_export_outbox_immutable_update
 BEFORE UPDATE ON platform_audit_export_outbox
 BEGIN
-  SELECT CASE WHEN
+  SELECT RAISE(ABORT, 'platform audit export identity is immutable')
+  WHERE
     NEW.id IS NOT OLD.id
     OR NEW.audit_event_id IS NOT OLD.audit_event_id
     OR NEW.payload_json IS NOT OLD.payload_json
-    OR NEW.created_at IS NOT OLD.created_at
-  THEN RAISE(ABORT, 'platform audit export identity is immutable') END;
+    OR NEW.created_at IS NOT OLD.created_at;
 END;
 
 CREATE TRIGGER platform_audit_export_outbox_immutable_delete
@@ -1206,7 +1207,8 @@ END;
 CREATE TRIGGER platform_audit_export_outbox_namespace_guard
 BEFORE INSERT ON platform_audit_export_outbox
 BEGIN
-  SELECT CASE WHEN NOT EXISTS (
+  SELECT RAISE(ABORT, 'platform audit export outbox identity is invalid')
+  WHERE NOT EXISTS (
     SELECT 1
     FROM platform_audit_export_requests request
     JOIN global_audit_events audit ON audit.id = request.audit_event_id
@@ -1233,7 +1235,7 @@ BEGIN
       AND json_extract(NEW.payload_json, '$.exportRequestId') = NEW.id
       AND json_extract(NEW.payload_json, '$.admittedAt') = envelope.created_at
       AND json(json_extract(NEW.payload_json, '$.envelope')) = json(envelope.envelope_json)
-  ) THEN RAISE(ABORT, 'platform audit export outbox identity is invalid') END;
+  );
 END;
 
 INSERT INTO platform_audit_export_requests (audit_event_id)
@@ -1283,8 +1285,8 @@ BEGIN
   FROM audit_envelope_staging staging
   WHERE staging.event_table = 'platform' AND staging.event_id = NEW.id;
 
-  SELECT CASE WHEN changes() != 1
-    THEN RAISE(ABORT, 'platform audit event has no matching v1 envelope') END;
+  SELECT RAISE(ABORT, 'platform audit event has no matching v1 envelope')
+  WHERE changes() != 1;
 
   DELETE FROM audit_envelope_staging
   WHERE event_table = 'platform' AND event_id = NEW.id;

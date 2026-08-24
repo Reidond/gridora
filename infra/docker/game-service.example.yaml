@@ -23,4 +23,6 @@ services:
       gridora.deployment-revision: ${GRIDORA_DEPLOYMENT_REVISION:?}
 networks:
   game-isolated:
-    internal: true
+    # Published player ports require a non-internal Docker bridge. The node
+    # nftables forward chain still denies unleased ingress and game egress.
+    internal: false

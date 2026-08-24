@@ -90,6 +90,13 @@ describe('MVP D1 schema', () => {
     ])
   })
 
+  it('keeps trigger assertions compatible with the remote D1 statement splitter', () => {
+    for (const migration of migrations) {
+      const sql = readFileSync(`${sqlDirectory}${migration.file}`, 'utf8')
+      expect(sql, migration.file).not.toMatch(/RAISE\([^;\n]+\)\s+END;/)
+    }
+  })
+
   it('rejects a deployment that combines a server and node from different organizations', () => {
     seedTenant('org-a', 'organization-a', 'identity-a')
     seedTenant('org-b', 'organization-b', 'identity-b')
