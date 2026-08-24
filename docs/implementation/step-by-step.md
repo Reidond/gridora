@@ -3259,3 +3259,33 @@ COMMERCIAL_REVIEW_REQUIRED` public envelope. Workflow check and 29 tests,
   Queue, Workflow, Worker, or D1 database was read, changed, or deleted. Live
   evidence requires reviewed production read adapters and deployment approval.
 - Decision: ADR 0083.
+
+## Step 108: Publish and harden the clean-runner release candidate
+
+- Status: local
+- Situation: The first public Actions run rejected three assumptions hidden by
+  a warm local checkout: Nuxt output did not exist before the Worker type check,
+  the Terraform lock lacked the Linux AMD64 provider package hash, and the
+  disposable systemd root omitted installed image helpers and nftables.
+- Task: Correct the release harness, prove each failure with the same pinned
+  Linux tools, and only then select required checks and enable repository
+  governance.
+- Action: Build before Wrangler checks. Lock Cloudflare provider 5.23.0 for
+  Darwin ARM64 and Linux AMD64. Install the three committed helper scripts and
+  a validation-only nftables unit before `systemd-analyze verify`. Create the
+  four workflow environments with a required reviewer and no credentials.
+- Result: The exact Wrangler binding check, Linux Terraform initialization and
+  validation, and Ubuntu cloud-init/systemd verification pass locally. The
+  environment review boundary exists without triggering a deployment.
+- Evidence: `.github/workflows/ci.yml`, `.github/workflows/image.yml`, the
+  Terraform dependency lock, public GitHub runs 32718878591, 32718878578, and
+  32718878568, and the four repository environments.
+- Verification: Local reproduction uses Wrangler 4.125.0, the pinned Terraform
+  image digest, and the pinned Ubuntu image digest. A follow-up public Actions
+  run and API-read branch/tag protection proof remain required before this step
+  can be marked published.
+- Blocker: No live provider test, image signing, provider image smoke, Worker,
+  D1, R2, Queue, Workflow, DNS, Tunnel, VPS, or production release was run.
+  Those operations still require reviewed credentials and an explicit live
+  deployment decision.
+- Decision: ADR 0084.

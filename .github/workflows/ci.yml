@@ -27,6 +27,10 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm check
+      # Nuxt emits the module referenced by the web Worker declaration. Build
+      # before checking generated bindings so a clean runner sees the same
+      # mainModule surface as the committed declaration.
+      - run: pnpm build
       - name: Verify generated Worker binding declarations
         run: pnpm wrangler:types:check
       - run: pnpm test
@@ -38,7 +42,6 @@ jobs:
         env:
           GRIDORA_LIVE_DOCKER_SECURITY: '1'
         run: pnpm exec vitest run tests/security/docker-boundaries.live.test.ts
-      - run: pnpm build
       - name: Validate Worker bundles without deployment
         run: |
           while IFS= read -r config; do

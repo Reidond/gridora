@@ -106,3 +106,5 @@ Rejected.
   failed-node forced cleanup.
 - ADR 0083 defines bounded, tenant-scoped, non-destructive symmetry checks for
   containers, ports, DNS, Tunnels, and R2 backup objects.
+- ADR 0084 defines reproducible clean-runner release evidence, cross-platform
+  dependency locks, and reviewer-gated publication boundaries.

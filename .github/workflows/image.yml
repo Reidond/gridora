@@ -202,7 +202,11 @@ jobs:
               install -m 0755 /workspace/infra/images/gridora-node-bootstrap /usr/local/libexec/gridora/gridora-node-bootstrap
               install -m 0755 /workspace/infra/images/gridora-node-bootstrap-cleanup /usr/local/libexec/gridora/gridora-node-bootstrap-cleanup
               install -m 0755 /workspace/infra/images/gridora-firewall-observation /usr/local/libexec/gridora/gridora-firewall-observation
+              install -m 0755 /workspace/infra/images/gridora-agent-current /usr/local/libexec/gridora/gridora-agent-current
+              install -m 0755 /workspace/infra/images/gridora-plugin-egress-network /usr/local/libexec/gridora/gridora-plugin-egress-network
+              install -m 0755 /workspace/infra/images/gridora-plugin-egress-lease /usr/local/libexec/gridora/gridora-plugin-egress-lease
               printf "[Service]\nExecStart=/bin/true\n" > /etc/systemd/system/docker.service
+              printf "[Service]\nExecStart=/bin/true\n" > /etc/systemd/system/nftables.service
               cloud-init schema -c /workspace/infra/images/cloud-init/node-bootstrap.yaml.tmpl
               systemd-analyze verify /workspace/infra/images/systemd/*.service /workspace/infra/images/systemd/*.socket /workspace/infra/images/systemd/*.path
               install -d -o root -g root -m 0700 /var/lib/gridora/tunnel /run/credentials/cloudflared.service
