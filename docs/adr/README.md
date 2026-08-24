@@ -144,3 +144,8 @@ Rejected.
   excludes nested container-layer package databases with the same suffix.
 - ADR 0102 passes the pinned Grype download action's declared command path into
   the fail-closed rootfs vulnerability scanner.
+- ADR 0103 binds rootfs scanning to current signed Ubuntu and Docker package
+  provenance, an exact-source Go 1.27 cloudflared build, and scoped synthetic
+  cataloger removal without weakening the High-or-Critical release gate.
+- ADR 0104 binds the public entry Worker to its exact API and Access origins and
+  keeps authenticated console routes on the Access-protected console hostname.

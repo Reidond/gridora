@@ -21,10 +21,53 @@ test -n "${GRIDORA_NODE_VERSION:-}"
 [[ "${GRIDORA_TRAEFIK_BINARY_CHECKSUM:-}" =~ ^[a-f0-9]{64}$ ]]
 [[ "${GRIDORA_UBUNTU_ISO_CHECKSUM:-}" =~ ^[a-f0-9]{64}$ ]]
 
+readonly docker_repository_key_fingerprint='9DC858229FC7DD38854AE2D88D81803C0EBFCD88'
+readonly docker_ce_version='5:29.7.2-1~ubuntu.24.04~noble'
+readonly docker_ce_cli_version='5:29.7.2-1~ubuntu.24.04~noble'
+readonly containerd_io_version='2.3.3-1~ubuntu.24.04~noble'
+readonly docker_buildx_version='0.36.1-1~ubuntu.24.04~noble'
+readonly docker_compose_version='5.5.0-1~ubuntu.24.04~noble'
+
+sudo apt-get update
+sudo DEBIAN_FRONTEND=noninteractive apt-get dist-upgrade -y --no-install-recommends
+sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+  ca-certificates cloud-init curl e2fsprogs gpg jq nftables openssl quota tar \
+  unattended-upgrades zstd
+sudo install -d -m 0755 /etc/apt/keyrings
+curl --fail --show-error --silent --location https://download.docker.com/linux/ubuntu/gpg |
+  sudo tee /etc/apt/keyrings/docker.asc >/dev/null
+sudo chmod 0644 /etc/apt/keyrings/docker.asc
+docker_repository_fingerprint=$(gpg --batch --no-options --with-colons \
+  --import-options show-only --import /etc/apt/keyrings/docker.asc 2>/dev/null |
+  awk -F: '$1 == "fpr" { print $10; exit }')
+test "${docker_repository_fingerprint}" = "${docker_repository_key_fingerprint}"
+os_id=$(awk -F= '$1 == "ID" { gsub(/^"|"$/, "", $2); print $2 }' /etc/os-release)
+os_codename=$(awk -F= '$1 == "VERSION_CODENAME" { gsub(/^"|"$/, "", $2); print $2 }' /etc/os-release)
+test "${os_id}" = ubuntu
+test "${os_codename}" = noble
+printf '%s\n' \
+  'Types: deb' \
+  'URIs: https://download.docker.com/linux/ubuntu' \
+  'Suites: noble' \
+  'Components: stable' \
+  'Signed-By: /etc/apt/keyrings/docker.asc' |
+  sudo tee /etc/apt/sources.list.d/docker.sources >/dev/null
 sudo apt-get update
 sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-  ca-certificates cloud-init curl docker.io docker-compose-v2 e2fsprogs jq nftables openssl quota tar \
-  unattended-upgrades zstd
+  "containerd.io=${containerd_io_version}" \
+  "docker-buildx-plugin=${docker_buildx_version}" \
+  "docker-ce-cli=${docker_ce_cli_version}" \
+  "docker-ce=${docker_ce_version}" \
+  "docker-compose-plugin=${docker_compose_version}"
+test "$(dpkg-query -W -f='${Version}' docker-ce)" = "${docker_ce_version}"
+test "$(dpkg-query -W -f='${Version}' docker-ce-cli)" = "${docker_ce_cli_version}"
+test "$(dpkg-query -W -f='${Version}' containerd.io)" = "${containerd_io_version}"
+test "$(dpkg-query -W -f='${Version}' docker-buildx-plugin)" = "${docker_buildx_version}"
+test "$(dpkg-query -W -f='${Version}' docker-compose-plugin)" = "${docker_compose_version}"
+if sudo apt-get --simulate dist-upgrade | awk '/^Inst / { pending = 1 } END { exit !pending }'; then
+  echo 'image provisioning left pending package upgrades' >&2
+  exit 1
+fi
 sudo systemctl start docker
 sudo docker version --format '{{.Server.APIVersion}}' | awk -F. '
   NF == 2 && ($1 > 1 || ($1 == 1 && $2 >= 43)) { compatible = 1 }

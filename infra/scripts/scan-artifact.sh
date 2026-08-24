@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-rootfs_archive=${1:?usage: scan-artifact.sh ROOTFS_ARCHIVE [GRYPE_COMMAND]}
+sbom=${1:?usage: scan-artifact.sh SBOM [GRYPE_COMMAND]}
 grype_command=${2:-grype}
 command -v "${grype_command}" >/dev/null || { echo "grype is required" >&2; exit 2; }
-[[ -s "${rootfs_archive}" ]]
-# Scan the same canonical rootfs archive used for the SBOM, never the opaque
-# QCOW2 container.
-"${grype_command}" "${rootfs_archive}" --fail-on high --only-fixed
+[[ -s "${sbom}" ]]
+# Scan the policy-validated SBOM bound to the canonical rootfs evidence. This
+# prevents Grype from silently recataloging the archive with a different set
+# of synthetic packages.
+"${grype_command}" "sbom:${sbom}" --fail-on high --only-fixed
