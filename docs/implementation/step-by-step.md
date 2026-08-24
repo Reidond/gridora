@@ -3518,7 +3518,43 @@ exceeded`. The image asset test requires explicit loop setup, both executable
   gate reports 893 correctly formatted files, zero lint or type errors across
   522 files, 226 passing test files with 1,495 passing tests, and 112 successful
   builds.
-- Blocker: Publish the correction, require the native Linux PR kernel proof,
-  merge, rerun the exact main image workflow, approve signing and simulated
-  smoke, then complete the protected release.
+- Blocker: Pull request 9 run 32742770930 attached an explicit loop device but
+  the hosted kernel still rejected the nested-container mount with `mount(2)
+system call failed: No such process.` Step 114 moves only this quota proof to
+  the ephemeral host's private mount namespace. The image, smoke, tag, and
+  release remain.
 - Decision: ADR 0088.
+
+## Step 114: Prove project quotas in a private host mount namespace
+
+- Status: local
+- Situation: Pull request 9 proved that a GitHub-hosted privileged container
+  can allocate an explicit loop device yet still cannot mount it. The firewall
+  integration proof passed in the same job. Repeating device-node changes
+  cannot correct a mount boundary imposed by the host kernel.
+- Task: Exercise ext4 project-quota enforcement on the ephemeral Ubuntu host
+  without leaking mounts, loop devices, files, or elevated state into later
+  workflow steps.
+- Action: Install Ubuntu's `quota` userspace tools on the ephemeral runner. Run
+  the quota script as root through `unshare --mount --propagation private` so
+  the loop-backed mount exists only in a private mount namespace. Keep the
+  Docker and nftables firewall proof in the pinned privileged validation image.
+- Action: Allocate the filesystem image and mount directory below one
+  `mktemp -d` root. On every exit, unmount, detach the exact loop device, remove
+  only device nodes created by the proof, and delete the validated temporary
+  root. Repeat the same host-isolated quota proof before the approved image
+  build.
+- Result: Pull requests must prove the real hosted Linux quota boundary before
+  merge. The protected build repeats it on its own runner, while neither proof
+  changes the host mount namespace or uses a repository secret, Docker socket,
+  game container, provider resource, or production system.
+- Evidence: `infra/scripts/validate-project-quota.sh`,
+  `.github/workflows/image.yml`, `tests/image/image-assets.test.ts`, failed pull
+  request run 32742770930, and ADR 0089.
+- Verification: Bash syntax, ShellCheck, the image-asset contract test, local
+  Docker quota enforcement, and the complete repository gate must pass. Pull
+  request 9 must then pass the native Ubuntu `validate` job before merge.
+- Blocker: Merge only after that proof is green, then rerun the exact main image
+  workflow, approve signing and simulated smoke, and complete the protected
+  semantic release.
+- Decision: ADR 0089.

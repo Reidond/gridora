@@ -201,12 +201,13 @@ jobs:
             '
       - name: Prove privileged node kernel boundaries on the hosted runner
         run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends quota
           docker run --rm --privileged --user 0:0 -v "$PWD:/workspace:ro" \
             gridora-node-validation:ci \
             /workspace/infra/scripts/validate-firewall-docker-networking.sh
-          docker run --rm --privileged --user 0:0 -v "$PWD:/workspace:ro" \
-            gridora-node-validation:ci \
-            /workspace/infra/scripts/validate-project-quota.sh
+          sudo unshare --mount --propagation private \
+            bash infra/scripts/validate-project-quota.sh
       - name: Exercise the packaged bootstrap and execution renderer
         run: |
           pnpm install --frozen-lockfile
@@ -245,6 +246,11 @@ jobs:
           sudo chmod 0666 /dev/kvm
           test -r /dev/kvm
           test -w /dev/kvm
+      - name: Install quota and read-only guest rootfs tooling
+        run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            libguestfs-tools qemu-system-x86 qemu-utils quota
       - name: Prove privileged node kernel boundaries on the KVM runner
         run: |
           docker build \
@@ -254,17 +260,11 @@ jobs:
           docker run --rm --privileged --user 0:0 -v "$PWD:/workspace:ro" \
             gridora-node-validation:ci \
             /workspace/infra/scripts/validate-firewall-docker-networking.sh
-          docker run --rm --privileged --user 0:0 -v "$PWD:/workspace:ro" \
-            gridora-node-validation:ci \
-            /workspace/infra/scripts/validate-project-quota.sh
+          sudo unshare --mount --propagation private \
+            bash infra/scripts/validate-project-quota.sh
       - uses: anchore/sbom-action/download-syft@f8bdd1d8ac5e901a77a92f111440fdb1b593736b # v0.20.6
       - uses: anchore/scan-action/download-grype@e1165082ffb1fe366ebaf02d8526e7c4989ea9d2 # v7
       - uses: sigstore/cosign-installer@d7543c93d881b35a8faa02e8e3605f69b7a1ce62 # v3.10.0
-      - name: Install read-only guest rootfs extraction tooling
-        run: |
-          sudo apt-get update
-          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-            libguestfs-tools qemu-system-x86 qemu-utils
       - name: Build the agent from the reviewed commit
         run: |
           pnpm install --frozen-lockfile

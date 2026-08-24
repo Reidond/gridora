@@ -20,15 +20,22 @@ describe('node image assets', () => {
     expect(integration).not.toContain('http://${allowed_ip}:2302')
   })
 
-  it('allocates an explicit disposable loop device for the project-quota proof', () => {
+  it('runs the project-quota proof on the host in a private mount namespace', () => {
     const quota = asset('infra/scripts/validate-project-quota.sh')
     const workflow = asset('.github/workflows/image.yml')
     expect(quota).toContain('mknod -m 0600 /dev/loop-control c 10 237')
     expect(quota).toContain('mknod -m 0600 "/dev/loop${index}" b 7 "$index"')
     expect(quota).toContain('losetup --find --show "$image"')
     expect(quota).toContain('losetup --detach "$loop_device"')
+    expect(quota).toContain('mktemp -d "${TMPDIR:-/tmp}/gridora-project-quota.XXXXXX"')
+    expect(quota).toContain('rm -rf -- "$proof_root"')
     expect(quota).not.toContain('mount -o loop,')
     expect(workflow.match(/validate-project-quota\.sh/g)).toHaveLength(4)
+    expect(workflow.match(/sudo unshare --mount --propagation private/g)).toHaveLength(2)
+    expect(workflow).toContain('libguestfs-tools qemu-system-x86 qemu-utils quota')
+    expect(workflow).not.toMatch(
+      /gridora-node-validation:ci \\\n\s+\/workspace\/infra\/scripts\/validate-project-quota\.sh/,
+    )
     expect(workflow).toContain('Prove privileged node kernel boundaries on the hosted runner')
   })
 

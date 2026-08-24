@@ -1,9 +1,10 @@
 # ADR 0088: Run explicit quota and firewall proofs before merge
 
-- Status: Accepted
+- Status: Superseded
 - Date: 2026-08-24
 - Supersedes: The protected-build-only kernel-preflight placement in ADR 0084
 - Extends: ADR 0027, ADR 0065, and ADR 0087
+- Superseded by: ADR 0089 for the project-quota execution boundary
 
 ## Situation
 
@@ -65,3 +66,9 @@ test to assert explicit loop allocation, both executable workflow proofs, and
 both static script checks. Publish the change through a pull request and require
 GitHub's native Linux `validate` job to execute both kernel proofs successfully
 before merge.
+
+Pull request 9 disproved the quota-container assumption: explicit loop-device
+attachment succeeded, but the host kernel still rejected the mount from inside
+the privileged container with `mount(2) system call failed: No such process`.
+ADR 0089 retains the pre-merge proof requirement and moves only the quota proof
+to an isolated host mount namespace.
