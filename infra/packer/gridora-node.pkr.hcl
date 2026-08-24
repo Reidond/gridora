@@ -151,6 +151,10 @@ build {
   name    = "gridora-node"
   sources = ["source.qemu.ubuntu"]
 
+  provisioner "shell" {
+    inline = ["install -d -m 0700 /tmp/gridora-image"]
+  }
+
   provisioner "file" {
     source      = "${path.root}/../images/"
     destination = "/tmp/gridora-image"

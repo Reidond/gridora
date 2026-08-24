@@ -3652,3 +3652,34 @@ directory /lib/modules/6.17.0-1022-azure`. Step 116 installs the matching
   failed run is not release evidence and no version tag may be published from
   it.
 - Decision: ADR 0092.
+
+## Step 118: Create the guest asset-upload directory before SCP
+
+- Status: local
+- Situation: Protected exact-main run 32750636584 proved Step 117 by completing
+  Ubuntu autoinstall and accepting Packer's ephemeral SSH key after about six
+  minutes. Its first file provisioner then failed with `scp:
+/tmp/gridora-image: Not a directory` because a content-only directory upload
+  requires its guest destination to exist first.
+- Task: Satisfy the exact SCP destination precondition without changing the
+  reviewed asset source or weakening any later image gate.
+- Action: Before the asset file provisioner, run `install -d -m 0700
+/tmp/gridora-image` as the unprivileged build user. Preserve the source's
+  trailing slash and the exact destination so Packer copies the reviewed
+  contents into that private directory.
+- Result: The upload cannot confuse a nonexistent path for a file destination,
+  and staged image assets remain readable only by the ephemeral build user
+  until the existing root provisioning script installs them.
+- Evidence: `infra/packer/gridora-node.pkr.hcl`,
+  `tests/image/image-assets.test.ts`, failed protected run 32750636584, and ADR 0093.
+- Verification: Require pinned Packer formatting and validation, focused image
+  and documentation tests, the complete repository gate, pull-request CI and
+  Security, then a new exact-main protected build and separately approved
+  simulated smoke. Packer 1.14.2 formatting and validation pass with QEMU plugin
+  1.1.6. The focused records pass 18 tests. The complete local gate reports 898
+  correctly formatted files, zero lint or type errors across 522 files, 226
+  passing test files with 1,497 passing tests, and 112 successful builds.
+- Blocker: The successful SSH connection proves the boot repair but not a
+  complete image. Do not tag or release until the replacement run produces and
+  validates the signed artifact.
+- Decision: ADR 0093.
