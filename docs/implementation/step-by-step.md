@@ -3911,3 +3911,33 @@ directory /lib/modules/6.17.0-1022-azure`. Step 116 installs the matching
 - Blocker: Run 32771824710 produced no accepted artifact. Do not tag or release
   until the replacement run completes every evidence and smoke lane.
 - Decision: ADR 0100.
+
+## Step 126: Scope package inventory to the Node root filesystem
+
+- Status: local
+- Situation: Owner-approved exact-main run 32774531888 built and validated the
+  QCOW2. The separated extraction stage then found two archive paths that ended
+  in `var/lib/dpkg/status`. The Node root had one package database, and a Docker
+  filesystem layer retained another package database below its nested root.
+- Task: Measure packages installed in the Node image without treating a nested
+  container layer as a second host package inventory.
+- Action: Match only `var/lib/dpkg/status` or `./var/lib/dpkg/status` at the
+  archive root. Continue to reject a missing or duplicate root-level database.
+  Ignore nested paths that only share the suffix.
+- Action: Add a regression archive with a root package database and a nested
+  Docker-layer package database. Require evidence to count only the two root
+  packages.
+- Result: Rootfs evidence describes the Node operating system. Nested container
+  contents remain covered by the complete archive SBOM, scan, checksum, and
+  signature without corrupting the host package count.
+- Evidence: `infra/scripts/extract-rootfs-evidence.sh`,
+  `tests/infrastructure/image-artifact-evidence.test.ts`, failed protected run
+  32774531888, and ADR 0101.
+- Verification: Require Bash parsing, ShellCheck, focused artifact and
+  documentation tests, the complete repository gate, pull-request CI and
+  Security, then a replacement owner-approved exact-main build and separately
+  approved simulated-provider smoke.
+- Blocker: Run 32774531888 uploaded no accepted artifact. Do not tag or release
+  until the replacement run passes extraction, SBOM, scan, signing, upload, and
+  provider smoke.
+- Decision: ADR 0101.

@@ -32,13 +32,16 @@ else
   echo "rootfs archive contains an unsafe path" >&2
   exit 1
 fi
-status_path_count=$(awk '$0 ~ "(^|/)var/lib/dpkg/status$" { count += 1 } END { print count + 0 }' "${archive_listing}")
+# Match only the package database at the guest root. Container image layers can
+# legitimately contain nested paths that also end in var/lib/dpkg/status, but
+# they do not describe packages installed in the Node image itself.
+status_path_count=$(awk '$0 ~ "^([.]/)?var/lib/dpkg/status$" { count += 1 } END { print count + 0 }' "${archive_listing}")
 if [[ "${status_path_count}" != 1 ]]; then
   printf 'rootfs archive must contain exactly one dpkg status file; found %s\n' \
     "${status_path_count}" >&2
   exit 1
 fi
-status_path=$(awk '$0 ~ "(^|/)var/lib/dpkg/status$" { print; exit }' "${archive_listing}")
+status_path=$(awk '$0 ~ "^([.]/)?var/lib/dpkg/status$" { print; exit }' "${archive_listing}")
 if [[ -z "${status_path}" ]]; then
   echo 'rootfs dpkg status path is empty' >&2
   exit 1

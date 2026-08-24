@@ -140,3 +140,5 @@ Rejected.
   retaining the complete rootfs as the scan, checksum, and signature evidence.
 - ADR 0100 makes every protected image evidence boundary independently visible
   while preserving its fail-closed order and artifact-upload fence.
+- ADR 0101 scopes the authoritative package inventory to the guest root and
+  excludes nested container-layer package databases with the same suffix.

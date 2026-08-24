@@ -39,11 +39,26 @@ const makeExecutable = async (root: string, name: string, contents: string) => {
 const rootfsArchive = async (root: string) => {
   const rootfs = join(root, 'rootfs')
   const status = join(rootfs, 'var', 'lib', 'dpkg', 'status')
+  const nestedContainerStatus = join(
+    rootfs,
+    'var',
+    'lib',
+    'docker',
+    'overlay2',
+    'fixture',
+    'diff',
+    'var',
+    'lib',
+    'dpkg',
+    'status',
+  )
   await mkdir(join(rootfs, 'var', 'lib', 'dpkg'), { recursive: true })
+  await mkdir(join(nestedContainerStatus, '..'), { recursive: true })
   await writeFile(
     status,
     'Package: gridora-agent\nVersion: 1.0.0\n\nPackage: cloudflared\nVersion: 2026.8.2\n',
   )
+  await writeFile(nestedContainerStatus, 'Package: nested-container-only\nVersion: 1.0.0\n')
   const archive = join(root, 'rootfs-source.tar')
   // A real Linux rootfs includes device nodes. The evidence extractor must not
   // recreate them as the unprivileged CI user merely to read dpkg status.
