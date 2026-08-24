@@ -1,0 +1,25 @@
+{
+  "name": "@gridora/plugin-testkit",
+  "version": "0.1.0",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json --noEmit",
+    "check": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --passWithNoTests --root ../.. packages/plugin-testkit/src"
+  },
+  "dependencies": {
+    "@gridora/plugin-sdk": "workspace:*",
+    "@gridora/plugin-sdk-agent": "workspace:*",
+    "@gridora/plugin-sdk-control": "workspace:*",
+    "effect": "catalog:"
+  },
+  "devDependencies": {
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

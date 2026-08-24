@@ -1,0 +1,37 @@
+{
+  "name": "@gridora/agent",
+  "version": "0.1.0",
+  "private": true,
+  "bin": {
+    "gridora-agent": "./dist/main.mjs"
+  },
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "build": "tsdown src/main.ts --format esm --out-dir dist",
+    "check": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --root ../.. apps/agent/test"
+  },
+  "dependencies": {
+    "@gridora/agent-observation-control": "workspace:*",
+    "@gridora/agent-protocol": "workspace:*",
+    "@gridora/agent-telemetry": "workspace:*",
+    "@gridora/backup-runtime": "workspace:*",
+    "@gridora/docker-runtime": "workspace:*",
+    "@gridora/log-control": "workspace:*",
+    "@gridora/plugin-registry": "workspace:*",
+    "@gridora/plugin-sdk-agent": "workspace:*",
+    "@gridora/steam-runtime": "workspace:*",
+    "@gridora/tunnel-credential": "workspace:*",
+    "@gridora/tunnel-installer": "workspace:*",
+    "effect": "catalog:"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "tsdown": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

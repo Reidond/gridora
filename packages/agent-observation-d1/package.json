@@ -1,0 +1,26 @@
+{
+  "name": "@gridora/agent-observation-d1",
+  "version": "0.1.0",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json --noEmit",
+    "check": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --root ../.. packages/agent-observation-d1/test"
+  },
+  "dependencies": {
+    "@gridora/agent-observation-control": "workspace:*",
+    "@gridora/agent-protocol": "workspace:*",
+    "@gridora/audit-contracts": "workspace:*",
+    "effect": "catalog:"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

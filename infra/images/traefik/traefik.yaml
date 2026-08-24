@@ -1,0 +1,17 @@
+api:
+  dashboard: false
+  insecure: false
+providers:
+  file:
+    directory: /etc/traefik/dynamic
+    watch: true
+entryPoints:
+  management:
+    address: 127.0.0.1:9080
+log:
+  level: INFO
+  format: json
+accessLog:
+  format: json
+ping:
+  entryPoint: management

@@ -1,0 +1,22 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "declaration": false,
+    "declarationMap": false
+  },
+  "include": [
+    "apps/**/*.ts",
+    "packages/**/*.ts",
+    "plugins/**/*.ts",
+    "tests/**/*.ts",
+    "workers/**/*.ts",
+    "vite.config.ts"
+  ],
+  "exclude": [
+    "**/dist/**",
+    "**/node_modules/**",
+    "**/.nuxt/**",
+    "**/.output/**",
+    "**/worker-configuration.d.ts"
+  ]
+}

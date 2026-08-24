@@ -1,0 +1,39 @@
+{
+  "name": "@gridora/root",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Multi-organization game server operations platform",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "build": "vp run -r build",
+    "check": "vp check",
+    "ci": "vp check && vp test --run && vp run -r build",
+    "format": "vp fmt --check",
+    "format:write": "vp fmt . --write",
+    "lint": "vp lint",
+    "test": "vp test --run",
+    "test:cloudflare": "tsc --noEmit -p tests/cloudflare/tsconfig.json --pretty false && vitest run --config tests/cloudflare/vitest.config.ts",
+    "test:watch": "vp test",
+    "typecheck": "vp check --no-fmt --no-lint",
+    "wrangler:types": "infra/scripts/generate-wrangler-types.sh",
+    "wrangler:types:check": "infra/scripts/check-wrangler-types.sh",
+    "cloudflare:render:ci": "node infra/scripts/render-cloudflare-environment.mjs --environment-file infra/cloudflare/environment.ci.json --out-dir .gridora/cloudflare-rendered"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "catalog:",
+    "@cloudflare/workers-types": "catalog:",
+    "@types/node": "catalog:",
+    "effect": "catalog:",
+    "typescript": "catalog:",
+    "vite": "catalog:",
+    "vite-plus": "catalog:",
+    "vitest": "catalog:",
+    "wrangler": "catalog:",
+    "yaml": "catalog:"
+  },
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "packageManager": "pnpm@11.21.0"
+}

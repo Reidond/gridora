@@ -1,0 +1,12 @@
+[Unit]
+Description=Watch for durable Gridora node registration
+After=gridora-node-bootstrap.service
+Requires=gridora-node-bootstrap.service
+
+[Path]
+PathExists=/var/lib/gridora/agent/registration-complete
+Unit=gridora-node-bootstrap-cleanup.service
+MakeDirectory=false
+
+[Install]
+WantedBy=multi-user.target

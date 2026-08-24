@@ -1,0 +1,26 @@
+{
+  "name": "@gridora/policy-d1",
+  "version": "0.1.0",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json --noEmit",
+    "check": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --root ../.. packages/policy-d1/test"
+  },
+  "dependencies": {
+    "@gridora/audit-contracts": "workspace:*",
+    "@gridora/policy-control": "workspace:*",
+    "effect": "catalog:"
+  },
+  "devDependencies": {
+    "@gridora/migrations": "workspace:*",
+    "@types/node": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

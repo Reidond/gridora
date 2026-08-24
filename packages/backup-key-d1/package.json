@@ -1,0 +1,25 @@
+{
+  "name": "@gridora/backup-key-d1",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json --noEmit",
+    "check": "tsc -p tsconfig.json --noEmit",
+    "test": "cd ../.. && vitest run packages/backup-key-d1/test"
+  },
+  "dependencies": {
+    "@gridora/backup-key": "workspace:*",
+    "@gridora/backup-r2": "workspace:*",
+    "effect": "catalog:"
+  },
+  "devDependencies": {
+    "@gridora/migrations": "workspace:*",
+    "@types/node": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

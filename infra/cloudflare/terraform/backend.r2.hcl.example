@@ -1,0 +1,22 @@
+# This file is intentionally partial. Terraform backend blocks cannot read
+# variables, and the bucket/account identity must remain outside source control.
+# `terraform-init.sh remote` creates the ignored backend.remote.tf type block.
+#
+# Use `infra/scripts/terraform-init.sh remote staging` or `production` instead.
+# The wrapper supplies this non-secret configuration and reads only the two R2
+# S3 credentials from AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY.
+
+bucket                      = "set-with-GRIDORA_TERRAFORM_STATE_BUCKET"
+key                         = "gridora/staging/terraform.tfstate"
+region                      = "auto"
+skip_credentials_validation = true
+skip_metadata_api_check     = true
+skip_region_validation      = true
+skip_requesting_account_id  = true
+skip_s3_checksum            = true
+use_path_style              = true
+use_lockfile                = true
+
+endpoints = {
+  s3 = "https://set-with-GRIDORA_R2_ACCOUNT_ID.r2.cloudflarestorage.com"
+}

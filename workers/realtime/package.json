@@ -1,0 +1,27 @@
+{
+  "name": "@gridora/realtime",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./ticket": "./src/ticket.ts"
+  },
+  "scripts": {
+    "build": "wrangler deploy --dry-run --outdir dist",
+    "check": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run --root ../.. workers/realtime/test"
+  },
+  "dependencies": {
+    "@gridora/agent-protocol": "workspace:*",
+    "@gridora/log-control": "workspace:*",
+    "@gridora/observability": "workspace:*",
+    "effect": "catalog:",
+    "hono": "catalog:"
+  },
+  "devDependencies": {
+    "typescript": "catalog:",
+    "vitest": "catalog:",
+    "wrangler": "catalog:"
+  }
+}

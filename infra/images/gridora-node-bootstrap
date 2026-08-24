@@ -1,0 +1,351 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# This prefix is an isolated behavior-test seam. The production unit never sets it.
+root=${GRIDORA_TEST_ROOT:-}
+if [[ -n "${root}" ]]; then
+  [[ "${root}" == /* && "${root}" != *'/../'* && "${root}" != */.. && -d "${root}" ]]
+  root=$(cd "${root}" && pwd -P)
+fi
+
+fail() {
+  printf 'gridora-node-bootstrap: %s\n' "$1" >&2
+  exit 1
+}
+
+safe_regular() {
+  local path=$1
+  [[ -f "${path}" && ! -L "${path}" ]] || fail "required regular file is unavailable"
+}
+
+safe_directory() {
+  local path=$1
+  [[ -d "${path}" && ! -L "${path}" ]] || fail "required directory is unavailable"
+}
+
+bounded_file() {
+  local path=$1 maximum=$2 size
+  safe_regular "${path}"
+  size=$(wc -c <"${path}")
+  size=${size//[[:space:]]/}
+  [[ "${size}" =~ ^[0-9]+$ && "${size}" -gt 0 && "${size}" -le "${maximum}" ]] ||
+    fail "required file has an invalid size"
+}
+
+assert_destination() {
+  local path=$1 parent
+  parent=${path%/*}
+  safe_directory "${parent}"
+  [[ ! -L "${path}" ]] || fail "destination must not be a symbolic link"
+}
+
+assert_owner() {
+  local path=$1
+  if [[ -z "${root}" ]]; then
+    [[ $(file_uid "${path}") == 0 ]] || fail "trusted input is not root-owned"
+  fi
+}
+
+file_uid() { stat -c '%u' "$1" 2>/dev/null || stat -f '%u' "$1"; }
+file_mode() { stat -c '%a' "$1" 2>/dev/null || stat -f '%Lp' "$1"; }
+sha256_file() {
+  if command -v sha256sum >/dev/null; then
+    sha256sum "$1" | cut -d' ' -f1
+  else
+    shasum -a 256 "$1" | cut -d' ' -f1
+  fi
+}
+parse_timestamp() {
+  local value=$1
+  if date -u -d "${value}" +%s >/dev/null 2>&1; then
+    date -u -d "${value}" +%s
+  else
+    date -j -u -f '%Y-%m-%dT%H:%M:%SZ' "${value}" +%s 2>/dev/null
+  fi
+}
+
+identifier='^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$'
+version='^[A-Za-z0-9][A-Za-z0-9._+-]{0,63}$'
+timestamp='^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}([.][0-9]+)?Z$'
+
+state_directory="${root}/var/lib/gridora/bootstrap"
+config_directory="${root}/etc/gridora"
+runtime_directory="${root}/run/cloud-init"
+cloud_data_directory="${root}/var/lib/cloud/data"
+reservation="${state_directory}/reservation.json"
+token_path="${state_directory}/registration-token"
+agent_config="${config_directory}/agent.json"
+public_key_path="${config_directory}/command-signing-public.pem"
+attestation_path="${config_directory}/image-attestation.json"
+image_version_path="${config_directory}/image-version"
+identity_manifest="${config_directory}/image-identity.json"
+identity_signature="${config_directory}/image-identity.sig"
+identity_public_key="${config_directory}/image-identity-public.pem"
+instance_data="${runtime_directory}/instance-data.json"
+cached_instance_id="${cloud_data_directory}/instance-id"
+completion="${state_directory}/handoff.complete"
+
+for directory in \
+  "${root}/etc" "${config_directory}" \
+  "${root}/var" "${root}/var/lib" "${root}/var/lib/gridora" "${state_directory}" \
+  "${root}/run" "${runtime_directory}" "${root}/var/lib/cloud" "${cloud_data_directory}"; do
+  safe_directory "${directory}"
+done
+safe_directory "${state_directory}"
+safe_directory "${config_directory}"
+assert_destination "${reservation}"
+assert_destination "${token_path}"
+assert_destination "${agent_config}"
+assert_destination "${public_key_path}"
+assert_destination "${attestation_path}"
+assert_destination "${completion}"
+
+# A completed bootstrap is a non-secret reboot contract. Never recreate a token.
+if [[ ! -e "${reservation}" ]]; then
+  bounded_file "${completion}" 512
+  bounded_file "${agent_config}" 16384
+  bounded_file "${public_key_path}" 1024
+  bounded_file "${attestation_path}" 1024
+  exit 0
+fi
+
+bounded_file "${reservation}" 65536
+assert_owner "${reservation}"
+[[ $(file_mode "${reservation}") == 600 ]] || fail "reservation mode must be 0600"
+
+expected_keys='["agentVersion","allowLoopbackHttp","commandSigningPublicKeyPem","controlPlaneUrl","dockerSocket","expectedControlPlaneHost","imageChecksum","imageId","imageVersion","nodeId","operationId","organizationId","pollWaitSeconds","providerImageId","providerType","registrationExpiresAt","registrationToken","schemaVersion"]'
+jq -e --argjson expected "${expected_keys}" '
+  type == "object" and (keys == $expected) and
+  .schemaVersion == 1 and
+  (.organizationId | type == "string") and
+  (.nodeId | type == "string") and
+  (.operationId | type == "string") and
+  (.providerType == "ovhcloud" or .providerType == "contabo") and
+  (.providerImageId | type == "string") and
+  (.imageId | type == "string") and
+  (.imageChecksum | type == "string") and
+  (.imageVersion | type == "string") and
+  (.controlPlaneUrl | type == "string") and
+  (.expectedControlPlaneHost | type == "string") and
+  (.allowLoopbackHttp | type == "boolean") and
+  (.agentVersion | type == "string") and
+  (.dockerSocket == "/var/run/docker.sock" or .dockerSocket == "/run/docker.sock") and
+  (.pollWaitSeconds | type == "number" and floor == . and . >= 1 and . <= 30) and
+  (.registrationExpiresAt | type == "string") and
+  (.registrationToken | type == "string") and
+  (.commandSigningPublicKeyPem | type == "string")
+' "${reservation}" >/dev/null || fail "reservation schema is invalid"
+
+read_json() { jq -r "$1" "${reservation}"; }
+organization_id=$(read_json '.organizationId')
+node_id=$(read_json '.nodeId')
+operation_id=$(read_json '.operationId')
+provider_type=$(read_json '.providerType')
+provider_image_id=$(read_json '.providerImageId')
+image_id=$(read_json '.imageId')
+image_checksum=$(read_json '.imageChecksum')
+image_version=$(read_json '.imageVersion')
+control_plane_url=$(read_json '.controlPlaneUrl')
+expected_control_plane_host=$(read_json '.expectedControlPlaneHost')
+allow_loopback_http=$(read_json '.allowLoopbackHttp')
+agent_version=$(read_json '.agentVersion')
+docker_socket=$(read_json '.dockerSocket')
+poll_wait_seconds=$(read_json '.pollWaitSeconds')
+registration_expires_at=$(read_json '.registrationExpiresAt')
+registration_token=$(read_json '.registrationToken')
+command_signing_public_key=$(read_json '.commandSigningPublicKeyPem')
+
+for value in "${organization_id}" "${node_id}" "${operation_id}" "${provider_image_id}" "${image_id}"; do
+  [[ "${value}" =~ ${identifier} ]] || fail "reservation identifier is invalid"
+done
+[[ "${image_version}" =~ ${version} && "${agent_version}" =~ ${version} ]] ||
+  fail "reservation version is invalid"
+[[ "${image_checksum}" =~ ^sha256:[a-f0-9]{64}$ ]] || fail "image checksum is invalid"
+[[ "${registration_expires_at}" =~ ${timestamp} ]] || fail "registration expiry is invalid"
+expires_epoch=$(parse_timestamp "${registration_expires_at}") ||
+  fail "registration expiry is invalid"
+[[ "${expires_epoch}" -gt $(date -u +%s) ]] || fail "registration token has expired"
+[[ "${registration_token}" =~ ^[a-f0-9]{64}$ ]] || fail "registration token is invalid"
+[[ "${expected_control_plane_host}" =~ ^[a-z0-9]([a-z0-9.-]{0,251}[a-z0-9])?$ &&
+  "${expected_control_plane_host}" != *..* ]] ||
+  fail "control-plane host is invalid"
+
+url_host=
+url_port=
+if [[ "${control_plane_url}" =~ ^https://([A-Za-z0-9.-]+)(:([0-9]{1,5}))?/?$ ]]; then
+  url_host=${BASH_REMATCH[1]}
+  url_port=${BASH_REMATCH[3]:-}
+  [[ "${url_host}" == "${expected_control_plane_host}" ]] ||
+    fail "control-plane host does not match"
+elif [[ "${allow_loopback_http}" == true &&
+  "${control_plane_url}" =~ ^http://(localhost|127[.]0[.]0[.]1)(:([0-9]{1,5}))?/?$ ]]; then
+  url_host=${BASH_REMATCH[1]}
+  url_port=${BASH_REMATCH[3]:-}
+  [[ "${url_host}" == "${expected_control_plane_host}" ]] ||
+    fail "loopback control-plane host does not match"
+else
+  fail "control-plane URL is invalid"
+fi
+if [[ -n "${url_port}" ]]; then
+  [[ "${url_port}" -ge 1 && "${url_port}" -le 65535 ]] || fail "control-plane port is invalid"
+fi
+
+bounded_file "${image_version_path}" 128
+assert_owner "${image_version_path}"
+installed_image_version=$(tr -d '\r\n' <"${image_version_path}")
+[[ "${installed_image_version}" == "${image_version}" ]] || fail "image version does not match"
+
+bounded_file "${identity_manifest}" 4096
+bounded_file "${identity_signature}" 1024
+bounded_file "${identity_public_key}" 1024
+assert_owner "${identity_manifest}"
+assert_owner "${identity_signature}"
+assert_owner "${identity_public_key}"
+[[ $(file_mode "${identity_manifest}") == 444 && $(file_mode "${identity_signature}") == 444 &&
+$(file_mode "${identity_public_key}") == 444 ]] || fail "signed image identity mode is invalid"
+identity_keys='["architecture","imageVersion","inputs","schemaVersion","sourceCommit"]'
+identity_input_keys='["agentSha256","cloudflaredSha256","nodeArchiveSha256","traefikSha256","ubuntuIsoSha256"]'
+jq -e --argjson keys "${identity_keys}" --argjson inputKeys "${identity_input_keys}" \
+  --arg version "${image_version}" '
+  type == "object" and keys == $keys and .schemaVersion == 1 and
+  .imageVersion == $version and .architecture == "amd64" and
+  (.sourceCommit | type == "string" and test("^[a-f0-9]{40}$")) and
+  (.inputs | type == "object" and keys == $inputKeys) and
+  ([.inputs[]] | all(.[]; type == "string" and test("^[a-f0-9]{64}$")))
+' "${identity_manifest}" >/dev/null || fail "signed image identity is invalid"
+identity_der_tmp=$(mktemp "${state_directory}/.image-identity-public.der.XXXXXX")
+if ! openssl pkey -pubin -in "${identity_public_key}" -outform DER -out "${identity_der_tmp}" 2>/dev/null; then
+  rm -f "${identity_der_tmp}"
+  fail "image identity public key is invalid"
+fi
+identity_der_size=$(wc -c <"${identity_der_tmp}")
+identity_der_size=${identity_der_size//[[:space:]]/}
+identity_der_prefix=$(od -An -tx1 -N12 "${identity_der_tmp}" | tr -d ' \n')
+rm -f "${identity_der_tmp}"
+[[ "${identity_der_size}" == 44 && "${identity_der_prefix}" == 302a300506032b6570032100 ]] ||
+  fail "image identity key is not Ed25519"
+openssl pkeyutl -verify -pubin -inkey "${identity_public_key}" -rawin \
+  -in "${identity_manifest}" -sigfile "${identity_signature}" >/dev/null 2>&1 ||
+  fail "signed image identity verification failed"
+identity_manifest_digest="sha256:$(sha256_file "${identity_manifest}")"
+identity_signature_digest="sha256:$(sha256_file "${identity_signature}")"
+identity_public_key_digest="sha256:$(sha256_file "${identity_public_key}")"
+
+# cloud-init v1.instance_id is the stable, provider-populated cross-datasource key.
+# Read only cloud-init's local cache. Never fetch a caller-selected metadata URL.
+bounded_file "${instance_data}" 65536
+bounded_file "${cached_instance_id}" 256
+assert_owner "${instance_data}"
+assert_owner "${cached_instance_id}"
+provider_instance_id=$(jq -er '.v1.instance_id | select(type == "string")' "${instance_data}") ||
+  fail "cloud-init instance ID is unavailable"
+platform=$(jq -er '.v1.platform | select(type == "string")' "${instance_data}") ||
+  fail "cloud-init platform is unavailable"
+cloud_name=$(jq -er '.v1.cloud_name | select(type == "string")' "${instance_data}") ||
+  fail "cloud-init cloud name is unavailable"
+cached_id=$(tr -d '\r\n' <"${cached_instance_id}")
+[[ "${provider_instance_id}" == "${cached_id}" ]] || fail "cloud-init instance IDs conflict"
+
+case "${provider_type}" in
+ovhcloud)
+  [[ "${platform}" == openstack || "${platform}" == configdrive ]] ||
+    fail "OVHcloud requires an OpenStack datasource"
+  [[ "${cloud_name}" == openstack || "${cloud_name}" == configdrive ]] ||
+    fail "OVHcloud cloud name is invalid"
+  [[ "${provider_instance_id}" =~ ^[a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$ ]] ||
+    fail "OVHcloud instance ID is invalid"
+  ;;
+contabo)
+  [[ "${platform}" == nocloud || "${platform}" == cloudstack ||
+    "${platform}" == openstack || "${platform}" == configdrive ]] ||
+    fail "Contabo cloud-init datasource is invalid"
+  [[ "${provider_instance_id}" =~ ^[1-9][0-9]{0,18}$ ]] || fail "Contabo instance ID is invalid"
+  ;;
+esac
+
+agent_uid=${GRIDORA_TEST_AGENT_UID:-}
+agent_gid=${GRIDORA_TEST_AGENT_GID:-}
+if [[ -z "${agent_uid}" || -z "${agent_gid}" ]]; then
+  agent_uid=$(id -u gridora-agent)
+  agent_gid=$(id -g gridora-agent)
+fi
+[[ "${agent_uid}" =~ ^[0-9]+$ && "${agent_gid}" =~ ^[0-9]+$ ]] ||
+  fail "agent ownership is invalid"
+
+config_tmp=$(mktemp "${config_directory}/.agent.json.XXXXXX")
+key_tmp=$(mktemp "${config_directory}/.command-signing-public.pem.XXXXXX")
+key_der_tmp=$(mktemp "${config_directory}/.command-signing-public.der.XXXXXX")
+attestation_tmp=$(mktemp "${config_directory}/.image-attestation.json.XXXXXX")
+token_tmp=$(mktemp "${state_directory}/.registration-token.XXXXXX")
+completion_tmp=$(mktemp "${state_directory}/.handoff.complete.XXXXXX")
+cleanup_temporary() {
+  rm -f "${config_tmp}" "${key_tmp}" "${key_der_tmp}" "${attestation_tmp}" "${token_tmp}" "${completion_tmp}"
+}
+trap cleanup_temporary EXIT
+
+printf '%s\n' "${command_signing_public_key}" >"${key_tmp}"
+chmod 0600 "${key_tmp}"
+openssl pkey -pubin -in "${key_tmp}" -outform DER -out "${key_der_tmp}" 2>/dev/null ||
+  fail "command-signing public key is invalid"
+key_der_size=$(wc -c <"${key_der_tmp}")
+key_der_size=${key_der_size//[[:space:]]/}
+[[ "${key_der_size}" == 44 ]] || fail "command-signing key is not Ed25519"
+[[ $(od -An -tx1 -N12 "${key_der_tmp}" | tr -d ' \n') == 302a300506032b6570032100 ]] ||
+  fail "command-signing key is not Ed25519"
+
+jq -n \
+  --arg organizationId "${organization_id}" \
+  --arg nodeId "${node_id}" \
+  --arg providerInstanceId "${provider_instance_id}" \
+  --arg controlPlaneUrl "${control_plane_url}" \
+  --arg expectedControlPlaneHost "${expected_control_plane_host}" \
+  --argjson allowLoopbackHttp "${allow_loopback_http}" \
+  --arg dockerSocket "${docker_socket}" \
+  --arg agentVersion "${agent_version}" \
+  --argjson pollWaitSeconds "${poll_wait_seconds}" \
+  '{apiVersion:"agent.gridora.dev/v1alpha1", $organizationId, $nodeId,
+    $providerInstanceId, $controlPlaneUrl, $expectedControlPlaneHost,
+    $allowLoopbackHttp, stateDirectory:"/var/lib/gridora/agent",
+    registrationTokenFile:"/var/lib/gridora/bootstrap/registration-token",
+    signingPublicKeyFile:"/etc/gridora/command-signing-public.pem",
+    $dockerSocket, $agentVersion, $pollWaitSeconds}' >"${config_tmp}"
+printf '%s\n' "${registration_token}" >"${token_tmp}"
+reservation_hash=$(sha256_file "${reservation}")
+jq -n --arg imageId "${image_id}" --arg imageVersion "${image_version}" \
+  --arg checksum "${image_checksum}" \
+  --arg buildIdentityManifestSha256 "${identity_manifest_digest}" \
+  --arg buildIdentitySignatureSha256 "${identity_signature_digest}" \
+  --arg buildIdentityPublicKeySha256 "${identity_public_key_digest}" \
+  '{schemaVersion:1,$imageId,$imageVersion,$checksum,signatureVerified:true,
+    $buildIdentityManifestSha256,$buildIdentitySignatureSha256,$buildIdentityPublicKeySha256}' >"${attestation_tmp}"
+jq -n --arg organizationId "${organization_id}" --arg nodeId "${node_id}" \
+  --arg operationId "${operation_id}" --arg providerType "${provider_type}" \
+  --arg providerImageId "${provider_image_id}" --arg providerInstanceId "${provider_instance_id}" \
+  --arg reservationSha256 "${reservation_hash}" \
+  '{$organizationId,$nodeId,$operationId,$providerType,$providerImageId,$providerInstanceId,$reservationSha256}' \
+  >"${completion_tmp}"
+
+chmod 0600 "${config_tmp}" "${key_tmp}" "${token_tmp}" "${completion_tmp}"
+chmod 0444 "${attestation_tmp}"
+chown "${agent_uid}:${agent_gid}" "${config_tmp}" "${key_tmp}" "${token_tmp}"
+if [[ -z "${root}" ]]; then
+  chown root:root "${attestation_tmp}"
+  chown root:root "${completion_tmp}"
+fi
+mv -f "${config_tmp}" "${agent_config}"
+mv -f "${key_tmp}" "${public_key_path}"
+mv -f "${attestation_tmp}" "${attestation_path}"
+mv -f "${token_tmp}" "${token_path}"
+mv -f "${completion_tmp}" "${completion}"
+if sync -f "${agent_config}" "${public_key_path}" "${attestation_path}" \
+  "${token_path}" "${completion}" "${config_directory}" "${state_directory}" 2>/dev/null; then
+  :
+elif [[ -n "${root}" ]]; then
+  sync
+else
+  fail "durable handoff sync failed"
+fi
+
+# Both services are enabled in the promoted image. The oneshot must exit before
+# systemd can start its ordered dependent. A separate post-agent unit erases the
+# reservation and cloud-init copies after the process accepts this durable handoff.

@@ -1,0 +1,21 @@
+{
+  "name": "@gridora/migrations",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./sql/*": "./sql/*"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "check": "tsc -p tsconfig.json",
+    "test": "vitest run --root ../.. packages/migrations/test"
+  },
+  "devDependencies": {
+    "@gridora/audit-contracts": "workspace:*",
+    "@types/node": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "name": "@gridora/server-plan-control",
+  "version": "0.1.0",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json --noEmit",
+    "check": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --root ../.. packages/server-plan-control/test"
+  },
+  "dependencies": {
+    "@gridora/audit-contracts": "workspace:*",
+    "@gridora/game-lifecycle-control": "workspace:*",
+    "@gridora/node-provision-control": "workspace:*",
+    "@gridora/policy-control": "workspace:*",
+    "effect": "catalog:"
+  },
+  "devDependencies": {
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

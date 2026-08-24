@@ -1,0 +1,725 @@
+name: Node image
+
+on:
+  pull_request:
+    paths:
+      - 'apps/agent/**'
+      - 'infra/packer/**'
+      - 'infra/images/**'
+      - 'infra/docker/**'
+      - 'infra/scripts/**'
+      - 'packages/docker-runtime/**'
+      - 'packages/agent-protocol/**'
+      - 'packages/agent-observation-control/**'
+      - 'packages/backup-runtime/**'
+      - 'packages/contracts/**'
+      - 'packages/node-provision-control/**'
+      - 'packages/node-provision-execution/**'
+      - 'packages/plugin-registry/**'
+      - 'packages/plugin-sdk/**'
+      - 'packages/plugin-sdk-agent/**'
+      - 'packages/steam-runtime/**'
+      - 'packages/tunnel-credential/**'
+      - 'packages/tunnel-installer/**'
+      - 'plugins/games/**'
+      - 'tests/image/**'
+      - 'tests/infrastructure/**'
+      - '.npmrc'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
+      - 'tsconfig.base.json'
+      - 'tsconfig.json'
+      - 'vite.config.ts'
+      - '.github/workflows/image.yml'
+  # Release evidence must exist for the exact commit, even when a main change
+  # does not match the narrower pull-request image paths.
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      build_local_image:
+        description: Build the local QEMU image. This does not create provider resources.
+        type: boolean
+        default: false
+      provider_image_smoke_approved:
+        description: Approve the protected provider registration, boot, and cleanup smoke test.
+        type: boolean
+        default: false
+      provider_image_smoke_provider:
+        description: Provider selected from the protected provider allowlist.
+        type: choice
+        options: [ovhcloud, contabo]
+        default: ovhcloud
+      provider_image_smoke_region:
+        description: Region selected from the protected provider smoke allowlist.
+        type: string
+        default: eu-west
+      provider_image_smoke_plan:
+        description: Plan selected from the protected low-cost smoke allowlist.
+        type: string
+        default: small
+      provider_image_smoke_ttl_minutes:
+        description: Maximum lifetime in minutes. Values above 60 are rejected.
+        type: string
+        default: '30'
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        with:
+          run_install: false
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: 24
+          cache: pnpm
+      - uses: hashicorp/setup-packer@ce93c3c08a6c2ff2275bf4b54ff0d9a75f6c9789 # v3
+        with:
+          version: '1.14.2'
+      - run: packer fmt -check -recursive infra/packer
+      - run: packer init infra/packer/gridora-node.pkr.hcl
+      - name: Create ephemeral validation keys and signed manifests
+        run: |
+          ssh-keygen -q -t ed25519 -N '' -f "$RUNNER_TEMP/packer-key"
+          openssl genpkey -algorithm ED25519 -out "$RUNNER_TEMP/identity-private.pem"
+          openssl pkey -in "$RUNNER_TEMP/identity-private.pem" -pubout -out "$RUNNER_TEMP/identity-public.pem"
+          jq -cS -n \
+            --arg version ci-validation \
+            --arg sourceCommit 0000000000000000000000000000000000000000 \
+            --arg zero 0000000000000000000000000000000000000000000000000000000000000000 \
+            '{schemaVersion:1,imageVersion:$version,sourceCommit:$sourceCommit,architecture:"amd64",
+              inputs:{agentSha256:$zero,cloudflaredSha256:$zero,nodeArchiveSha256:$zero,
+                traefikSha256:$zero,ubuntuIsoSha256:$zero}}' > "$RUNNER_TEMP/identity.json"
+          openssl pkeyutl -sign -inkey "$RUNNER_TEMP/identity-private.pem" -rawin \
+            -in "$RUNNER_TEMP/identity.json" -out "$RUNNER_TEMP/identity.sig"
+          openssl genpkey -algorithm ED25519 -out "$RUNNER_TEMP/agent-update-private.pem"
+          openssl pkey -in "$RUNNER_TEMP/agent-update-private.pem" -pubout \
+            -out "$RUNNER_TEMP/agent-update-public.pem"
+          agent_update_sha=$(sha256sum /bin/true | cut -d ' ' -f 1)
+          agent_update_size=$(wc -c </bin/true | tr -d '[:space:]')
+          jq -cS -n \
+            --arg checksum "sha256:$agent_update_sha" \
+            --argjson size "$agent_update_size" \
+            '{apiVersion:"agent-update.gridora.dev/v1alpha1",version:"ci-validation",releaseSequence:1,
+              securityEpoch:1,architecture:"amd64",
+              source:{url:"https://updates.gridora.test/agents/ci-validation-amd64",sha256:$checksum,sizeBytes:$size},
+              compatibility:{commandApiVersion:"agent.gridora.dev/v1alpha1",
+                minimumControlPlaneApiVersion:"agent.gridora.dev/v1alpha1",
+                maximumControlPlaneApiVersion:"agent.gridora.dev/v1alpha1"},
+              issuedAt:"2026-08-23T00:00:00Z"}' | tr -d '\n' > "$RUNNER_TEMP/agent-update.unsigned.json"
+          agent_update_signature=$(openssl pkeyutl -sign -inkey "$RUNNER_TEMP/agent-update-private.pem" -rawin \
+            -in "$RUNNER_TEMP/agent-update.unsigned.json" | base64 | tr -d '\n')
+          jq -cS --arg signature "$agent_update_signature" '. + {signature:$signature}' \
+            "$RUNNER_TEMP/agent-update.unsigned.json" > "$RUNNER_TEMP/agent-update-manifest.json"
+          jq -cS -n \
+            '{schemaVersion:1,allowedArtifactHosts:["updates.gridora.test"],maximumArtifactBytes:134217728,
+              commandApiVersion:"agent.gridora.dev/v1alpha1",controlPlaneApiVersion:"agent.gridora.dev/v1alpha1"}' \
+            > "$RUNNER_TEMP/agent-update-policy.json"
+          jq -cS 'del(.signature)' "$RUNNER_TEMP/agent-update-manifest.json" | tr -d '\n' \
+            > "$RUNNER_TEMP/agent-update.verify.json"
+          openssl pkeyutl -verify -pubin -inkey "$RUNNER_TEMP/agent-update-public.pem" -rawin \
+            -in "$RUNNER_TEMP/agent-update.verify.json" \
+            -sigfile <(jq -r '.signature' "$RUNNER_TEMP/agent-update-manifest.json" | base64 --decode) >/dev/null
+      - name: Validate image template
+        run: >-
+          packer validate
+          -var 'image_version=ci-validation'
+          -var 'source_commit=0000000000000000000000000000000000000000'
+          -var 'image_identity_manifest=${{ runner.temp }}/identity.json'
+          -var 'image_identity_signature=${{ runner.temp }}/identity.sig'
+          -var 'image_identity_public_key=${{ runner.temp }}/identity-public.pem'
+          -var 'ubuntu_iso_url=https://example.invalid/ubuntu-24.04.iso'
+          -var 'ubuntu_iso_checksum=sha256:0000000000000000000000000000000000000000000000000000000000000000'
+          -var 'agent_binary=/bin/true'
+          -var 'agent_binary_checksum=0000000000000000000000000000000000000000000000000000000000000000'
+          -var 'agent_update_manifest=${{ runner.temp }}/agent-update-manifest.json'
+          -var 'agent_update_release_signing_public_key=${{ runner.temp }}/agent-update-public.pem'
+          -var 'agent_update_policy=${{ runner.temp }}/agent-update-policy.json'
+          -var 'node_archive=/bin/true'
+          -var 'node_archive_checksum=0000000000000000000000000000000000000000000000000000000000000000'
+          -var 'cloudflared_binary=/bin/true'
+          -var 'cloudflared_binary_checksum=0000000000000000000000000000000000000000000000000000000000000000'
+          -var 'traefik_binary=/bin/true'
+          -var 'traefik_binary_checksum=0000000000000000000000000000000000000000000000000000000000000000'
+          -var 'build_ssh_public_key=${{ runner.temp }}/packer-key.pub'
+          -var 'build_ssh_private_key=${{ runner.temp }}/packer-key'
+          infra/packer/gridora-node.pkr.hcl
+      - name: Validate cloud-init, systemd, and shell assets
+        run: |
+          bash -n \
+            infra/packer/scripts/provision.sh \
+            infra/images/clean-cloud-init-sensitive-cache \
+            infra/images/create-image-promotion-manifest \
+            infra/images/gridora-firewall-observation \
+            infra/images/gridora-node-bootstrap \
+            infra/images/gridora-node-bootstrap-cleanup \
+            infra/images/recovery-check \
+            infra/images/validate-cloudflared-token \
+            infra/scripts/extract-rootfs-evidence.sh \
+            infra/scripts/generate-sbom.sh \
+            infra/scripts/scan-artifact.sh \
+            infra/scripts/sign-artifact.sh \
+            infra/scripts/verify-artifact.sh
+          shellcheck \
+            infra/packer/scripts/provision.sh \
+            infra/images/clean-cloud-init-sensitive-cache \
+            infra/images/create-image-promotion-manifest \
+            infra/images/gridora-firewall-observation \
+            infra/images/gridora-node-bootstrap \
+            infra/images/gridora-node-bootstrap-cleanup \
+            infra/images/recovery-check \
+            infra/images/validate-cloudflared-token \
+            infra/scripts/extract-rootfs-evidence.sh \
+            infra/scripts/generate-sbom.sh \
+            infra/scripts/scan-artifact.sh \
+            infra/scripts/sign-artifact.sh \
+            infra/scripts/verify-artifact.sh
+          docker run --rm -v "$PWD:/workspace:ro" \
+            ubuntu@sha256:561618e2c15bf2397621dd04f96926663a3b5616c189cf7e38db7e82f5c538ea \
+            bash -euc '
+              apt-get update >/dev/null
+              DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends cloud-init jq openssl systemd >/dev/null
+              groupadd --gid 10001 gridora-data
+              groupadd --system gridora-agent
+              useradd --system --gid gridora-agent gridora-agent
+              groupadd --system cloudflared
+              useradd --system --gid cloudflared cloudflared
+              groupadd --system gridora-traefik
+              useradd --system --gid gridora-traefik gridora-traefik
+              install -d /usr/local/bin /usr/local/libexec/gridora /etc/systemd/system
+              install -m 0755 /bin/true /usr/local/bin/gridora-agent
+              install -m 0755 /bin/true /usr/local/bin/cloudflared
+              install -m 0755 /bin/true /usr/local/bin/traefik
+              install -m 0755 /workspace/infra/images/recovery-check /usr/local/libexec/gridora/recovery-check
+              install -m 0755 /workspace/infra/images/validate-cloudflared-token /usr/local/libexec/gridora/validate-cloudflared-token
+              install -m 0755 /workspace/infra/images/gridora-node-bootstrap /usr/local/libexec/gridora/gridora-node-bootstrap
+              install -m 0755 /workspace/infra/images/gridora-node-bootstrap-cleanup /usr/local/libexec/gridora/gridora-node-bootstrap-cleanup
+              install -m 0755 /workspace/infra/images/gridora-firewall-observation /usr/local/libexec/gridora/gridora-firewall-observation
+              printf "[Service]\nExecStart=/bin/true\n" > /etc/systemd/system/docker.service
+              cloud-init schema -c /workspace/infra/images/cloud-init/node-bootstrap.yaml.tmpl
+              systemd-analyze verify /workspace/infra/images/systemd/*.service /workspace/infra/images/systemd/*.socket /workspace/infra/images/systemd/*.path
+              install -d -o root -g root -m 0700 /var/lib/gridora/tunnel /run/credentials/cloudflared.service
+              printf token > /var/lib/gridora/tunnel/credential
+              chown root:root /var/lib/gridora/tunnel/credential
+              chmod 0600 /var/lib/gridora/tunnel/credential
+              cp /var/lib/gridora/tunnel/credential /run/credentials/cloudflared.service/tunnel-token
+              CREDENTIALS_DIRECTORY=/run/credentials/cloudflared.service /workspace/infra/images/validate-cloudflared-token
+              chmod 0644 /var/lib/gridora/tunnel/credential
+              ! CREDENTIALS_DIRECTORY=/run/credentials/cloudflared.service /workspace/infra/images/validate-cloudflared-token
+            '
+      - name: Exercise the packaged bootstrap and execution renderer
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm exec vitest run \
+            tests/infrastructure/node-bootstrap.test.ts \
+            tests/infrastructure/firewall-observation.test.ts \
+            tests/infrastructure/image-promotion-manifest.test.ts \
+            packages/node-provision-execution/test/index.test.ts
+      - name: Prove Gridora firewall reload preserves Docker networking
+        run: |
+          docker run --rm --privileged -v "$PWD:/workspace:ro" \
+            ubuntu@sha256:561618e2c15bf2397621dd04f96926663a3b5616c189cf7e38db7e82f5c538ea \
+            bash -euc '
+              # Run a real nested Docker daemon first.  This creates Docker's
+              # own nftables-compatible chains before Gridora reloads only its
+              # table.  A fixture or a ruleset grep alone cannot prove that a
+              # cloud-init nftables restart preserves container connectivity.
+              export DEBIAN_FRONTEND=noninteractive
+              apt-get update >/dev/null
+              apt-get install -y --no-install-recommends ca-certificates docker.io nftables >/dev/null
+              dockerd --host=unix:///var/run/docker.sock --storage-driver=vfs --iptables=true --ip-masq=true \
+                >/tmp/gridora-dockerd.log 2>&1 &
+              dockerd_pid=$!
+              cleanup() {
+                kill "$dockerd_pid" 2>/dev/null || true
+                wait "$dockerd_pid" 2>/dev/null || true
+              }
+              trap cleanup EXIT
+              for attempt in $(seq 1 45); do
+                docker info >/dev/null 2>&1 && break
+                sleep 1
+              done
+              docker info >/dev/null
+              readonly probe_image=busybox@sha256:73aaf090f3d85aa34ee199857f03fa3a95c8ede2ffd4cc2cdb5b94e566b11662
+              docker pull "$probe_image" >/dev/null
+              docker network create gridora-firewall-probe >/dev/null
+              docker run -d --name gridora-firewall-allowed --network gridora-firewall-probe "$probe_image" \
+                sh -c "mkdir /www; printf ok >/www/index.html; exec httpd -f -p 2302 -h /www" >/dev/null
+              docker run -d --name gridora-firewall-denied --network gridora-firewall-probe "$probe_image" \
+                sh -c "mkdir /www; printf denied >/www/index.html; exec httpd -f -p 2303 -h /www" >/dev/null
+              sleep 1
+              allowed_ip=$(docker inspect -f "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}" gridora-firewall-allowed)
+              denied_ip=$(docker inspect -f "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}" gridora-firewall-denied)
+              nft list ruleset | grep -Eq "chain DOCKER|chain docker-forward"
+              nft -f /workspace/infra/images/nftables/gridora.nft
+              nft add element inet gridora leased_tcp_ports { 2302 }
+              allowed=$(timeout 8 docker run --rm --network gridora-firewall-probe "$probe_image" \
+                wget -qO- -T 3 "http://${allowed_ip}:2302")
+              test "$allowed" = ok
+              ! timeout 6 docker run --rm --network gridora-firewall-probe "$probe_image" \
+                wget -qO- -T 3 "http://${denied_ip}:2303"
+              # A second reload exercises the same path cloud-init uses after
+              # Docker.  Docker's chain and a permitted game port must remain
+              # usable; an unleased port must remain denied.
+              nft -f /workspace/infra/images/nftables/gridora.nft
+              nft add element inet gridora leased_tcp_ports { 2302 }
+              nft list ruleset | grep -Eq "chain DOCKER|chain docker-forward"
+              allowed_after_reload=$(timeout 8 docker run --rm --network gridora-firewall-probe "$probe_image" \
+                wget -qO- -T 3 "http://${allowed_ip}:2302")
+              test "$allowed_after_reload" = ok
+            '
+      - name: Validate the ext4 project quota command contract
+        run: |
+          docker run --rm --privileged \
+            ubuntu@sha256:561618e2c15bf2397621dd04f96926663a3b5616c189cf7e38db7e82f5c538ea \
+            bash -euc '
+              export DEBIAN_FRONTEND=noninteractive
+              apt-get update >/dev/null
+              apt-get install -y --no-install-recommends e2fsprogs quota util-linux >/dev/null
+              fallocate --length 268435456 /gridora-servers.ext4
+              mkfs.ext4 -q -F -O quota,project -E nodiscard,quotatype=prjquota /gridora-servers.ext4
+              mkdir /servers
+              mount -o loop,nodev,nosuid,prjquota /gridora-servers.ext4 /servers
+              trap "umount /servers" EXIT
+              mkdir /servers/server-1
+              chown 10001:10001 /servers/server-1
+              chattr -R -p 1000000000 /servers/server-1
+              find /servers/server-1 -xdev -type d -exec chattr +P {} +
+              setquota -P 1000000000 1024 1024 0 0 /servers
+              quota_row=$(repquota -P -O csv /servers | grep "^#1000000000,")
+              IFS=, read -r project block_status file_status used soft hard rest <<<"$quota_row"
+              test "$project" = "#1000000000"
+              test "$soft" = 1024
+              test "$hard" = 1024
+              attributes=$(lsattr -d -p /servers/server-1)
+              set -- $attributes
+              test "$1" = 1000000000
+              case "$2" in *P*) ;; *) exit 1 ;; esac
+              set +e
+              setpriv --reuid=10001 --regid=10001 --clear-groups dd if=/dev/zero of=/servers/server-1/exhaustion.bin bs=1M count=4 conv=fsync status=none
+              write_status=$?
+              set -e
+              test "$write_status" -ne 0
+            '
+
+  build-local:
+    # The verifier pins the keyless certificate identity to main.  A manually
+    # dispatched build from another ref is not release evidence and must not
+    # look successful to the release gate.
+    if: github.event_name == 'workflow_dispatch' && inputs.build_local_image && github.ref == 'refs/heads/main'
+    needs: validate
+    runs-on: [self-hosted, linux, x64, kvm]
+    environment: image-signing
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        with:
+          version: '11.21.0'
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: '24.19.0'
+          cache: pnpm
+      - uses: hashicorp/setup-packer@ce93c3c08a6c2ff2275bf4b54ff0d9a75f6c9789 # v3
+        with:
+          version: '1.14.2'
+      - uses: anchore/sbom-action/download-syft@f8bdd1d8ac5e901a77a92f111440fdb1b593736b # v0.20.6
+      - uses: anchore/scan-action/download-grype@e1165082ffb1fe366ebaf02d8526e7c4989ea9d2 # v7
+      - uses: sigstore/cosign-installer@d7543c93d881b35a8faa02e8e3605f69b7a1ce62 # v3.10.0
+      - name: Install read-only guest rootfs extraction tooling
+        run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends libguestfs-tools
+      - name: Build the agent from the reviewed commit
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm --filter @gridora/agent build
+          chmod 0755 apps/agent/dist/main.mjs
+          node apps/agent/dist/main.mjs --help | grep -F 'quota-helper --listen-fd 3'
+          if grep '^import ' apps/agent/dist/main.mjs | grep -v 'from "node:'; then
+            echo 'agent artifact contains a runtime package import' >&2
+            exit 1
+          fi
+      - name: Download the pinned Node.js runtime
+        env:
+          NODE_ARCHIVE_SHA256: 14b342e71204f811bde6153be8e04b62aef63c236fef92b55f9c83154b409647
+          NODE_VERSION: 24.19.0
+        run: |
+          curl --fail --show-error --silent --location \
+            --output "$RUNNER_TEMP/node-runtime.tar.xz" \
+            "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz"
+          printf '%s  %s\n' "$NODE_ARCHIVE_SHA256" "$RUNNER_TEMP/node-runtime.tar.xz" | sha256sum --check --strict
+      - name: Download the pinned cloudflared binary
+        env:
+          CLOUDFLARED_SHA256: fcfb02b575a52ca1af2e3267af4e1517bcdeb30ac48c834c69abaed3c0576ad2
+          CLOUDFLARED_VERSION: 2026.8.2
+        run: |
+          curl --fail --show-error --silent --location \
+            --output "$RUNNER_TEMP/cloudflared" \
+            "https://github.com/cloudflare/cloudflared/releases/download/${CLOUDFLARED_VERSION}/cloudflared-linux-amd64"
+          printf '%s  %s\n' "$CLOUDFLARED_SHA256" "$RUNNER_TEMP/cloudflared" | sha256sum --check --strict
+          chmod 0755 "$RUNNER_TEMP/cloudflared"
+      - name: Download the pinned Traefik binary
+        env:
+          TRAEFIK_ARCHIVE_SHA256: 0bd0b7152805af906a9feb5aec95e96322237d715ae89c4fe3adbbc07a63b631
+          TRAEFIK_VERSION: 3.7.11
+        run: |
+          curl --fail --show-error --silent --location \
+            --output "$RUNNER_TEMP/traefik.tar.gz" \
+            "https://github.com/traefik/traefik/releases/download/v${TRAEFIK_VERSION}/traefik_v${TRAEFIK_VERSION}_linux_amd64.tar.gz"
+          printf '%s  %s\n' "$TRAEFIK_ARCHIVE_SHA256" "$RUNNER_TEMP/traefik.tar.gz" | sha256sum --check --strict
+          tar --extract --gzip --file "$RUNNER_TEMP/traefik.tar.gz" --directory "$RUNNER_TEMP" traefik
+          chmod 0755 "$RUNNER_TEMP/traefik"
+      - name: Validate the pinned Ubuntu source
+        env:
+          UBUNTU_ISO_URL: ${{ vars.UBUNTU_2404_ISO_URL }}
+          UBUNTU_ISO_SHA256: ${{ vars.UBUNTU_2404_ISO_SHA256 }}
+        run: |
+          [[ "$UBUNTU_ISO_URL" == https://releases.ubuntu.com/24.04/* ]]
+          [[ "$UBUNTU_ISO_SHA256" =~ ^[a-f0-9]{64}$ ]]
+      # These inputs are available only through the protected image-signing
+      # environment. The image receives the public key, policy, and signed
+      # baseline manifest; the release-signing private key stays on the runner.
+      - name: Prepare protected baseline agent-update inputs
+        env:
+          AGENT_UPDATE_ARTIFACT_BASE_URL: ${{ vars.GRIDORA_AGENT_UPDATE_ARTIFACT_BASE_URL }}
+          AGENT_UPDATE_POLICY_JSON: ${{ vars.GRIDORA_AGENT_UPDATE_POLICY_JSON }}
+          AGENT_UPDATE_RELEASE_SEQUENCE: ${{ vars.GRIDORA_AGENT_UPDATE_RELEASE_SEQUENCE }}
+          AGENT_UPDATE_RELEASE_SIGNING_PRIVATE_KEY_PEM: ${{ secrets.GRIDORA_AGENT_UPDATE_RELEASE_SIGNING_PRIVATE_KEY_PEM }}
+          AGENT_UPDATE_RELEASE_SIGNING_PUBLIC_KEY_PEM: ${{ vars.GRIDORA_AGENT_UPDATE_RELEASE_SIGNING_PUBLIC_KEY_PEM }}
+          AGENT_UPDATE_SECURITY_EPOCH: ${{ vars.GRIDORA_AGENT_UPDATE_SECURITY_EPOCH }}
+          AGENT_BINARY: ${{ github.workspace }}/apps/agent/dist/main.mjs
+        run: |
+          test -n "$AGENT_UPDATE_ARTIFACT_BASE_URL"
+          test -n "$AGENT_UPDATE_POLICY_JSON"
+          test -n "$AGENT_UPDATE_RELEASE_SEQUENCE"
+          test -n "$AGENT_UPDATE_RELEASE_SIGNING_PRIVATE_KEY_PEM"
+          test -n "$AGENT_UPDATE_RELEASE_SIGNING_PUBLIC_KEY_PEM"
+          test -n "$AGENT_UPDATE_SECURITY_EPOCH"
+          trap 'shred --force --remove=unlink --zero "$RUNNER_TEMP/agent-update-release-signing-private.pem"' EXIT
+          printf '%s\n' "$AGENT_UPDATE_RELEASE_SIGNING_PRIVATE_KEY_PEM" \
+            > "$RUNNER_TEMP/agent-update-release-signing-private.pem"
+          printf '%s\n' "$AGENT_UPDATE_RELEASE_SIGNING_PUBLIC_KEY_PEM" \
+            > "$RUNNER_TEMP/agent-update-release-signing-public.pem"
+          printf '%s\n' "$AGENT_UPDATE_POLICY_JSON" > "$RUNNER_TEMP/agent-update-policy.json"
+          chmod 0600 "$RUNNER_TEMP/agent-update-release-signing-private.pem"
+          openssl pkey -in "$RUNNER_TEMP/agent-update-release-signing-private.pem" -pubout \
+            -out "$RUNNER_TEMP/agent-update-release-signing-derived-public.pem"
+          cmp "$RUNNER_TEMP/agent-update-release-signing-public.pem" \
+            "$RUNNER_TEMP/agent-update-release-signing-derived-public.pem"
+          jq -en \
+            --argjson sequence "$AGENT_UPDATE_RELEASE_SEQUENCE" \
+            --argjson epoch "$AGENT_UPDATE_SECURITY_EPOCH" \
+            '$sequence | type == "number" and floor == . and . >= 1 and . <= 9007199254740991' \
+            >/dev/null
+          jq -en \
+            --argjson sequence "$AGENT_UPDATE_RELEASE_SEQUENCE" \
+            --argjson epoch "$AGENT_UPDATE_SECURITY_EPOCH" \
+            '$epoch | type == "number" and floor == . and . >= 1 and . <= 9007199254740991' \
+            >/dev/null
+          jq -e '
+            type == "object" and
+            keys == ["allowedArtifactHosts","commandApiVersion","controlPlaneApiVersion","maximumArtifactBytes","schemaVersion"] and
+            .schemaVersion == 1 and
+            .commandApiVersion == "agent.gridora.dev/v1alpha1" and
+            .controlPlaneApiVersion == "agent.gridora.dev/v1alpha1" and
+            (.maximumArtifactBytes | type == "number" and floor == . and . >= 1 and . <= 134217728) and
+            (.allowedArtifactHosts | type == "array" and length >= 1 and length <= 16 and
+              all(.[]; type == "string" and test("^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$")))
+          ' "$RUNNER_TEMP/agent-update-policy.json" >/dev/null
+          agent_update_host=$(jq -nr --arg url "$AGENT_UPDATE_ARTIFACT_BASE_URL" \
+            '$url | capture("^https://(?<host>[A-Za-z0-9.-]+)(?::[0-9]{1,5})?(?:/|$)").host | ascii_downcase')
+          jq -e --arg host "$agent_update_host" '.allowedArtifactHosts | index($host) != null' \
+            "$RUNNER_TEMP/agent-update-policy.json" >/dev/null
+          image_version="${GITHUB_RUN_ID}.${GITHUB_RUN_ATTEMPT}"
+          agent_update_sha=$(sha256sum "$AGENT_BINARY" | cut -d ' ' -f 1)
+          agent_update_size=$(wc -c < "$AGENT_BINARY" | tr -d '[:space:]')
+          agent_update_url="${AGENT_UPDATE_ARTIFACT_BASE_URL%/}/agents/gridora-agent-${image_version}-amd64"
+          jq -cS -n \
+            --arg version "$image_version" \
+            --arg checksum "sha256:$agent_update_sha" \
+            --arg url "$agent_update_url" \
+            --arg issuedAt "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" \
+            --argjson size "$agent_update_size" \
+            --argjson sequence "$AGENT_UPDATE_RELEASE_SEQUENCE" \
+            --argjson epoch "$AGENT_UPDATE_SECURITY_EPOCH" \
+            '{apiVersion:"agent-update.gridora.dev/v1alpha1",version:$version,releaseSequence:$sequence,
+              securityEpoch:$epoch,architecture:"amd64",source:{url:$url,sha256:$checksum,sizeBytes:$size},
+              compatibility:{commandApiVersion:"agent.gridora.dev/v1alpha1",
+                minimumControlPlaneApiVersion:"agent.gridora.dev/v1alpha1",
+                maximumControlPlaneApiVersion:"agent.gridora.dev/v1alpha1"},issuedAt:$issuedAt}' \
+            | tr -d '\n' > "$RUNNER_TEMP/agent-update.unsigned.json"
+          agent_update_signature=$(openssl pkeyutl -sign \
+            -inkey "$RUNNER_TEMP/agent-update-release-signing-private.pem" -rawin \
+            -in "$RUNNER_TEMP/agent-update.unsigned.json" | base64 | tr -d '\n')
+          jq -cS --arg signature "$agent_update_signature" '. + {signature:$signature}' \
+            "$RUNNER_TEMP/agent-update.unsigned.json" > "$RUNNER_TEMP/agent-update-manifest.json"
+          jq -cS 'del(.signature)' "$RUNNER_TEMP/agent-update-manifest.json" | tr -d '\n' \
+            > "$RUNNER_TEMP/agent-update.verify.json"
+          openssl pkeyutl -verify -pubin -inkey "$RUNNER_TEMP/agent-update-release-signing-public.pem" -rawin \
+            -in "$RUNNER_TEMP/agent-update.verify.json" \
+            -sigfile <(jq -r '.signature' "$RUNNER_TEMP/agent-update-manifest.json" | base64 --decode) >/dev/null
+      - name: Build the local QCOW2 image
+        env:
+          AGENT_BINARY: ${{ github.workspace }}/apps/agent/dist/main.mjs
+          CLOUDFLARED_BINARY: ${{ runner.temp }}/cloudflared
+          CLOUDFLARED_SHA256: fcfb02b575a52ca1af2e3267af4e1517bcdeb30ac48c834c69abaed3c0576ad2
+          IMAGE_VERSION: ${{ github.run_id }}.${{ github.run_attempt }}
+          NODE_ARCHIVE: ${{ runner.temp }}/node-runtime.tar.xz
+          NODE_ARCHIVE_SHA256: 14b342e71204f811bde6153be8e04b62aef63c236fef92b55f9c83154b409647
+          TRAEFIK_ARCHIVE_SHA256: 0bd0b7152805af906a9feb5aec95e96322237d715ae89c4fe3adbbc07a63b631
+          TRAEFIK_BINARY: ${{ runner.temp }}/traefik
+          UBUNTU_ISO_URL: ${{ vars.UBUNTU_2404_ISO_URL }}
+          UBUNTU_ISO_SHA256: ${{ vars.UBUNTU_2404_ISO_SHA256 }}
+          IMAGE_IDENTITY_PRIVATE_KEY_PEM: ${{ secrets.GRIDORA_IMAGE_IDENTITY_PRIVATE_KEY_PEM }}
+          IMAGE_IDENTITY_PUBLIC_KEY_PEM: ${{ vars.GRIDORA_IMAGE_IDENTITY_PUBLIC_KEY_PEM }}
+        run: |
+          test -n "$IMAGE_IDENTITY_PRIVATE_KEY_PEM"
+          test -n "$IMAGE_IDENTITY_PUBLIC_KEY_PEM"
+          trap 'shred --force --remove=unlink --zero "$RUNNER_TEMP/identity-private.pem"' EXIT
+          ssh-keygen -q -t ed25519 -N '' -f "$RUNNER_TEMP/packer-key"
+          agent_sha=$(sha256sum "$AGENT_BINARY" | cut -d ' ' -f 1)
+          traefik_sha=$(sha256sum "$TRAEFIK_BINARY" | cut -d ' ' -f 1)
+          printf '%s\n' "$IMAGE_IDENTITY_PRIVATE_KEY_PEM" > "$RUNNER_TEMP/identity-private.pem"
+          printf '%s\n' "$IMAGE_IDENTITY_PUBLIC_KEY_PEM" > "$RUNNER_TEMP/identity-public.pem"
+          chmod 0600 "$RUNNER_TEMP/identity-private.pem"
+          openssl pkey -in "$RUNNER_TEMP/identity-private.pem" -pubout -out "$RUNNER_TEMP/identity-derived-public.pem"
+          cmp "$RUNNER_TEMP/identity-public.pem" "$RUNNER_TEMP/identity-derived-public.pem"
+          jq -cS -n \
+            --arg version "$IMAGE_VERSION" \
+            --arg sourceCommit "$GITHUB_SHA" \
+            --arg agent "$agent_sha" \
+            --arg cloudflared "$CLOUDFLARED_SHA256" \
+            --arg node "$NODE_ARCHIVE_SHA256" \
+            --arg traefik "$traefik_sha" \
+            --arg ubuntu "$UBUNTU_ISO_SHA256" \
+            '{schemaVersion:1,imageVersion:$version,sourceCommit:$sourceCommit,architecture:"amd64",
+              inputs:{agentSha256:$agent,cloudflaredSha256:$cloudflared,nodeArchiveSha256:$node,
+                traefikSha256:$traefik,ubuntuIsoSha256:$ubuntu}}' > "$RUNNER_TEMP/identity.json"
+          openssl pkeyutl -sign -inkey "$RUNNER_TEMP/identity-private.pem" -rawin \
+            -in "$RUNNER_TEMP/identity.json" -out "$RUNNER_TEMP/identity.sig"
+          packer init infra/packer/gridora-node.pkr.hcl
+          set -o pipefail
+          packer build \
+            -var "image_version=$IMAGE_VERSION" \
+            -var "source_commit=$GITHUB_SHA" \
+            -var "image_identity_manifest=$RUNNER_TEMP/identity.json" \
+            -var "image_identity_signature=$RUNNER_TEMP/identity.sig" \
+            -var "image_identity_public_key=$RUNNER_TEMP/identity-public.pem" \
+            -var "ubuntu_iso_url=$UBUNTU_ISO_URL" \
+            -var "ubuntu_iso_checksum=sha256:$UBUNTU_ISO_SHA256" \
+            -var "agent_binary=$AGENT_BINARY" \
+            -var "agent_binary_checksum=$agent_sha" \
+            -var "agent_update_manifest=$RUNNER_TEMP/agent-update-manifest.json" \
+            -var "agent_update_release_signing_public_key=$RUNNER_TEMP/agent-update-release-signing-public.pem" \
+            -var "agent_update_policy=$RUNNER_TEMP/agent-update-policy.json" \
+            -var "node_archive=$NODE_ARCHIVE" \
+            -var "node_archive_checksum=$NODE_ARCHIVE_SHA256" \
+            -var "cloudflared_binary=$CLOUDFLARED_BINARY" \
+            -var "cloudflared_binary_checksum=$CLOUDFLARED_SHA256" \
+            -var "traefik_binary=$TRAEFIK_BINARY" \
+            -var "traefik_binary_checksum=$traefik_sha" \
+            -var "build_ssh_public_key=$RUNNER_TEMP/packer-key.pub" \
+            -var "build_ssh_private_key=$RUNNER_TEMP/packer-key" \
+            infra/packer/gridora-node.pkr.hcl \
+            | tee "$RUNNER_TEMP/packer-build.log"
+          image_path=$(find "dist/image-$IMAGE_VERSION" -name '*.qcow2' -type f -print -quit)
+          test -n "$image_path"
+          cp "$RUNNER_TEMP/packer-build.log" "$image_path.build.log"
+          echo "IMAGE_PATH=$image_path" >> "$GITHUB_ENV"
+          jq -n \
+            --arg commit "$GITHUB_SHA" \
+            --arg agent "$agent_sha" \
+            --arg cloudflared "$CLOUDFLARED_SHA256" \
+            --arg node "$NODE_ARCHIVE_SHA256" \
+            --arg traefik "$traefik_sha" \
+            --arg traefikArchive "$TRAEFIK_ARCHIVE_SHA256" \
+            --arg ubuntuIso "$UBUNTU_ISO_URL" \
+            --arg ubuntu "$UBUNTU_ISO_SHA256" \
+            '{commit: $commit, inputs: {agentSha256: $agent, cloudflaredSha256: $cloudflared, nodeSha256: $node, traefikSha256: $traefik, traefikArchiveSha256: $traefikArchive, ubuntuIsoUrl: $ubuntuIso, ubuntuIsoSha256: $ubuntu}}' \
+            > "$image_path.inputs.json"
+      - name: Check the QCOW2 artifact
+        run: |
+          set -o pipefail
+          qemu-img check "$IMAGE_PATH" | tee "$IMAGE_PATH.image-test.log"
+          qemu-img info --output=json "$IMAGE_PATH" | jq -e '.format == "qcow2"' >> "$IMAGE_PATH.image-test.log"
+      - name: Create and scan supply-chain evidence
+        run: |
+          infra/scripts/extract-rootfs-evidence.sh \
+            "$IMAGE_PATH" \
+            "$IMAGE_PATH.rootfs.tar" \
+            "$IMAGE_PATH.rootfs-evidence.json"
+          sha256sum "$IMAGE_PATH" "$IMAGE_PATH.rootfs.tar" > "$IMAGE_PATH.sha256"
+          infra/scripts/generate-sbom.sh \
+            "$IMAGE_PATH.rootfs.tar" \
+            "$IMAGE_PATH.spdx.json" \
+            "$IMAGE_PATH.rootfs-evidence.json"
+          set -o pipefail
+          infra/scripts/scan-artifact.sh "$IMAGE_PATH.rootfs.tar" | tee "$IMAGE_PATH.scan.log"
+          infra/scripts/sign-artifact.sh "$IMAGE_PATH"
+          infra/scripts/verify-artifact.sh \
+            "$IMAGE_PATH" \
+            "$IMAGE_PATH.sha256" \
+            "$IMAGE_PATH.spdx.json" \
+            "$IMAGE_PATH.rootfs.tar" \
+            "$IMAGE_PATH.rootfs-evidence.json"
+          cp "$RUNNER_TEMP/identity.json" "$IMAGE_PATH.identity.json"
+          cp "$RUNNER_TEMP/identity.sig" "$IMAGE_PATH.identity.sig"
+          cp "$RUNNER_TEMP/identity-public.pem" "$IMAGE_PATH.identity-public.pem"
+          image_sha=$(cut -d ' ' -f 1 "$IMAGE_PATH.sha256")
+          identity_manifest_sha=$(sha256sum "$IMAGE_PATH.identity.json" | cut -d ' ' -f 1)
+          identity_signature_sha=$(sha256sum "$IMAGE_PATH.identity.sig" | cut -d ' ' -f 1)
+          identity_public_key_sha=$(sha256sum "$IMAGE_PATH.identity-public.pem" | cut -d ' ' -f 1)
+          rootfs_archive_sha=$(sha256sum "$IMAGE_PATH.rootfs.tar" | cut -d ' ' -f 1)
+          rootfs_evidence_sha=$(sha256sum "$IMAGE_PATH.rootfs-evidence.json" | cut -d ' ' -f 1)
+          sbom_sha=$(sha256sum "$IMAGE_PATH.spdx.json" | cut -d ' ' -f 1)
+          GRIDORA_IMAGE_VERSION='${{ github.run_id }}.${{ github.run_attempt }}' \
+          GRIDORA_IMAGE_NAME="$(basename "$IMAGE_PATH")" \
+          GRIDORA_IMAGE_SHA256="$image_sha" \
+          GRIDORA_SOURCE_COMMIT="$GITHUB_SHA" \
+          GRIDORA_BUILD_IDENTITY_MANIFEST_SHA256="sha256:$identity_manifest_sha" \
+          GRIDORA_BUILD_IDENTITY_SIGNATURE_SHA256="sha256:$identity_signature_sha" \
+          GRIDORA_BUILD_IDENTITY_PUBLIC_KEY_SHA256="sha256:$identity_public_key_sha" \
+          GRIDORA_ROOTFS_ARCHIVE_SHA256="sha256:$rootfs_archive_sha" \
+          GRIDORA_ROOTFS_EVIDENCE_SHA256="sha256:$rootfs_evidence_sha" \
+          GRIDORA_SBOM_SHA256="sha256:$sbom_sha" \
+            infra/images/create-image-promotion-manifest > "$IMAGE_PATH.manifest.json"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: gridora-node-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ env.IMAGE_PATH }}
+            ${{ env.IMAGE_PATH }}.sha256
+            ${{ env.IMAGE_PATH }}.rootfs.tar
+            ${{ env.IMAGE_PATH }}.rootfs-evidence.json
+            ${{ env.IMAGE_PATH }}.spdx.json
+            ${{ env.IMAGE_PATH }}.sigstore.json
+            ${{ env.IMAGE_PATH }}.inputs.json
+            ${{ env.IMAGE_PATH }}.identity.json
+            ${{ env.IMAGE_PATH }}.identity.sig
+            ${{ env.IMAGE_PATH }}.identity-public.pem
+            ${{ env.IMAGE_PATH }}.build.log
+            ${{ env.IMAGE_PATH }}.image-test.log
+            ${{ env.IMAGE_PATH }}.scan.log
+            ${{ env.IMAGE_PATH }}.manifest.json
+          if-no-files-found: error
+          retention-days: 7
+
+  # A successful manual image run is not release evidence unless this job also
+  # succeeds.  The named protected environment is where provider credentials,
+  # cost limits, and manual reviewers belong; workflow inputs alone are never
+  # authority to create a billable image or instance.
+  provider-image-smoke:
+    name: provider-image-smoke
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      inputs.build_local_image &&
+      github.ref == 'refs/heads/main'
+    needs: build-local
+    runs-on: [self-hosted, linux, x64, kvm]
+    environment: provider-image-smoke
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: sigstore/cosign-installer@d7543c93d881b35a8faa02e8e3605f69b7a1ce62 # v3.10.0
+      - name: Require explicit protected smoke approval and bounded inputs
+        env:
+          APPROVED: ${{ inputs.provider_image_smoke_approved }}
+          PLAN: ${{ inputs.provider_image_smoke_plan }}
+          PLAN_ALLOWLIST: ${{ vars.GRIDORA_PROVIDER_IMAGE_SMOKE_PLAN_ALLOWLIST }}
+          PROVIDER: ${{ inputs.provider_image_smoke_provider }}
+          PROVIDER_ALLOWLIST: ${{ vars.GRIDORA_PROVIDER_IMAGE_SMOKE_PROVIDER_ALLOWLIST }}
+          REGION: ${{ inputs.provider_image_smoke_region }}
+          REGION_ALLOWLIST: ${{ vars.GRIDORA_PROVIDER_IMAGE_SMOKE_REGION_ALLOWLIST }}
+          TTL_MINUTES: ${{ inputs.provider_image_smoke_ttl_minutes }}
+        run: |
+          contains_csv() {
+            local needle="$1"
+            local values="$2"
+            local item
+            local -a entries
+            IFS=',' read -r -a entries <<<"$values"
+            for item in "${entries[@]}"; do
+              [[ "$item" == "$needle" ]] && return 0
+            done
+            return 1
+          }
+          [[ "$APPROVED" == true ]] || {
+            echo 'Explicit provider image smoke approval is required.' >&2
+            exit 1
+          }
+          [[ "$TTL_MINUTES" =~ ^([1-9]|[1-5][0-9]|60)$ ]] || {
+            echo 'Provider image smoke TTL must be an integer from 1 to 60 minutes.' >&2
+            exit 1
+          }
+          [[ -n "$PROVIDER_ALLOWLIST" && -n "$REGION_ALLOWLIST" && -n "$PLAN_ALLOWLIST" ]] || {
+            echo 'Protected provider image smoke allowlists are not configured.' >&2
+            exit 1
+          }
+          contains_csv "$PROVIDER" "$PROVIDER_ALLOWLIST" || {
+            echo 'Requested provider is not in the protected smoke allowlist.' >&2
+            exit 1
+          }
+          contains_csv "$REGION" "$REGION_ALLOWLIST" || {
+            echo 'Requested region is not in the protected smoke allowlist.' >&2
+            exit 1
+          }
+          contains_csv "$PLAN" "$PLAN_ALLOWLIST" || {
+            echo 'Requested plan is not in the protected low-cost smoke allowlist.' >&2
+            exit 1
+          }
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: gridora-node-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/provider-image-smoke-artifact
+      - name: Verify the exact signed artifact selected for smoke
+        env:
+          ARTIFACT_DIRECTORY: ${{ runner.temp }}/provider-image-smoke-artifact
+        run: |
+          mapfile -t images < <(find "$ARTIFACT_DIRECTORY" -type f -name '*.qcow2' -print)
+          test "${#images[@]}" -eq 1
+          image_path="${images[0]}"
+          infra/scripts/verify-artifact.sh \
+            "$image_path" \
+            "$image_path.sha256" \
+            "$image_path.spdx.json" \
+            "$image_path.rootfs.tar" \
+            "$image_path.rootfs-evidence.json"
+          manifest="$image_path.manifest.json"
+          test -s "$manifest"
+          digest="sha256:$(sha256sum "$image_path" | cut -d ' ' -f 1)"
+          jq -e --arg commit "$GITHUB_SHA" --arg digest "$digest" '
+            .schemaVersion == 1 and .state == "testing" and .sourceCommit == $commit and
+            .image.architecture == "amd64" and .image.format == "qcow2" and
+            ("sha256:" + .image.sha256) == $digest
+          ' "$manifest" >/dev/null
+          {
+            echo '### Provider image smoke input'
+            echo "- source commit: \`$GITHUB_SHA\`"
+            echo "- artifact digest: \`$digest\`"
+            echo '- provider image ID: unavailable until the production registration adapter is composed'
+            echo '- boot and agent health: unavailable because no provider image was registered'
+            echo '- cleanup reconciliation: unavailable because no provider resource was created'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Fail closed until the production provider image smoke adapter is available
+        run: |
+          cat >&2 <<'EOF'
+          The exact QCOW2 artifact is cryptographically verified, but Gridora does not yet
+          have a production OVHcloud/Contabo image import, boot, response-loss adoption, and
+          cleanup adapter. This protected job intentionally fails instead of claiming provider
+          registration, agent health, or deletion evidence that it did not observe.
+          EOF
+          exit 1

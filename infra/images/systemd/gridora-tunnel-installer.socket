@@ -1,0 +1,13 @@
+[Unit]
+Description=Gridora root tunnel credential installer socket
+
+[Socket]
+ListenStream=/run/gridora/tunnel-installer.sock
+SocketUser=root
+SocketGroup=gridora-agent
+SocketMode=0660
+DirectoryMode=0750
+RemoveOnStop=true
+
+[Install]
+WantedBy=sockets.target

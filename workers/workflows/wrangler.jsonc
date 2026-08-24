@@ -1,0 +1,127 @@
+{
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "gridora-workflows",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-23",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": false,
+  "preview_urls": false,
+  "secrets": { "required": ["INTERNAL_SERVICE_SECRET"] },
+  "services": [{ "binding": "APPLICATION", "service": "gridora-api" }],
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "ORGANIZATION_EVENTS",
+        "class_name": "OrganizationEventsDO",
+        "script_name": "gridora-realtime",
+      },
+    ],
+  },
+  "r2_buckets": [{ "binding": "ARTIFACTS", "bucket_name": "gridora-artifacts" }],
+  "workflows": [
+    {
+      "binding": "DELETE_ORGANIZATION",
+      "name": "gridora-delete-organization",
+      "class_name": "DeleteOrganizationWorkflow",
+    },
+    {
+      "binding": "PROVISION_NODE",
+      "name": "gridora-provision-node",
+      "class_name": "ProvisionNodeWorkflow",
+    },
+    {
+      "binding": "SERVER_PROVISION_PLAN",
+      "name": "gridora-server-provision-plan",
+      "class_name": "ServerProvisionPlanWorkflow",
+    },
+    {
+      "binding": "REBUILD_NODE",
+      "name": "gridora-rebuild-node",
+      "class_name": "RebuildNodeWorkflow",
+    },
+    { "binding": "RETIRE_NODE", "name": "gridora-retire-node", "class_name": "RetireNodeWorkflow" },
+    { "binding": "DRAIN_NODE", "name": "gridora-drain-node", "class_name": "DrainNodeWorkflow" },
+    {
+      "binding": "LEAVE_DRAIN_NODE",
+      "name": "gridora-leave-drain-node",
+      "class_name": "LeaveDrainNodeWorkflow",
+    },
+    {
+      "binding": "NODE_RUNTIME_LIFECYCLE",
+      "name": "gridora-node-runtime-lifecycle",
+      "class_name": "NodeRuntimeLifecycleWorkflow",
+    },
+    {
+      "binding": "NODE_IMAGE_LIFECYCLE",
+      "name": "gridora-node-image-lifecycle",
+      "class_name": "NodeImageLifecycleWorkflow",
+    },
+    {
+      "binding": "DEPLOY_GAME_SERVER",
+      "name": "gridora-deploy-game-server",
+      "class_name": "DeployGameServerWorkflow",
+    },
+    {
+      "binding": "START_GAME_SERVER",
+      "name": "gridora-start-game-server",
+      "class_name": "StartGameServerWorkflow",
+    },
+    {
+      "binding": "STOP_GAME_SERVER",
+      "name": "gridora-stop-game-server",
+      "class_name": "StopGameServerWorkflow",
+    },
+    {
+      "binding": "RESTART_GAME_SERVER",
+      "name": "gridora-restart-game-server",
+      "class_name": "RestartGameServerWorkflow",
+    },
+    {
+      "binding": "UPDATE_GAME_SERVER",
+      "name": "gridora-update-game-server",
+      "class_name": "UpdateGameServerWorkflow",
+    },
+    {
+      "binding": "APPLY_GAME_CONFIG",
+      "name": "gridora-apply-game-config",
+      "class_name": "ApplyGameConfigWorkflow",
+    },
+    { "binding": "SYNC_MODS", "name": "gridora-sync-mods", "class_name": "SyncModsWorkflow" },
+    {
+      "binding": "BACKUP_GAME_SERVER",
+      "name": "gridora-backup-game-server",
+      "class_name": "BackupGameServerWorkflow",
+    },
+    {
+      "binding": "RESTORE_GAME_SERVER",
+      "name": "gridora-restore-game-server",
+      "class_name": "RestoreGameServerWorkflow",
+    },
+    {
+      "binding": "MOVE_GAME_SERVER",
+      "name": "gridora-move-game-server",
+      "class_name": "MoveGameServerWorkflow",
+    },
+    {
+      "binding": "DELETE_GAME_SERVER",
+      "name": "gridora-delete-game-server",
+      "class_name": "DeleteGameServerWorkflow",
+    },
+    {
+      "binding": "REGISTER_PROVIDER_IMAGE",
+      "name": "gridora-register-provider-image",
+      "class_name": "RegisterProviderImageWorkflow",
+    },
+    {
+      "binding": "RECONCILE_ORPHAN",
+      "name": "gridora-reconcile-orphan",
+      "class_name": "ReconcileOrphanWorkflow",
+    },
+    {
+      "binding": "RECONCILE_POLICY",
+      "name": "gridora-reconcile-policy",
+      "class_name": "ReconcilePolicyWorkflow",
+    },
+  ],
+  "observability": { "enabled": true, "head_sampling_rate": 0.1 },
+}

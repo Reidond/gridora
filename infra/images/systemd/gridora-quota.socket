@@ -1,0 +1,15 @@
+[Unit]
+Description=Gridora project quota helper socket
+Requires=gridora-quota-filesystem.service
+After=gridora-quota-filesystem.service
+
+[Socket]
+ListenStream=/run/gridora/quota.sock
+SocketUser=root
+SocketGroup=gridora-agent
+SocketMode=0660
+DirectoryMode=0750
+RemoveOnStop=true
+
+[Install]
+WantedBy=sockets.target

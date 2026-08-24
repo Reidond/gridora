@@ -1,0 +1,48 @@
+#!/usr/sbin/nft -f
+# Gridora owns only this table.  `flush ruleset` would also remove Docker's
+# tables and every provider/host firewall policy when cloud-init restarts
+# nftables after Docker.  `destroy table` is deliberately scoped and succeeds
+# when a previous Gridora table is absent, so this file is safely reloadable.
+destroy table inet gridora
+
+table inet gridora {
+  set leased_tcp_ports {
+    type inet_service
+    flags interval
+  }
+
+  set leased_udp_ports {
+    type inet_service
+    flags interval
+  }
+
+  set permitted_game_egress_v4 {
+    type ifname . ipv4_addr . inet_proto . inet_service
+    flags interval,timeout
+    timeout 65m
+    gc-interval 30s
+  }
+
+  chain input {
+    type filter hook input priority filter; policy drop;
+    ct state invalid drop
+    ct state established,related accept
+    iifname "lo" accept
+    ip protocol icmp accept
+    ip6 nexthdr icmpv6 accept
+    tcp dport @leased_tcp_ports accept
+    udp dport @leased_udp_ports accept
+  }
+
+  chain forward {
+    type filter hook forward priority filter; policy drop;
+    ct state established,related accept
+    meta iifname . ip daddr . meta l4proto . th dport @permitted_game_egress_v4 accept
+    tcp dport @leased_tcp_ports accept
+    udp dport @leased_udp_ports accept
+  }
+
+  chain output {
+    type filter hook output priority filter; policy accept;
+  }
+}

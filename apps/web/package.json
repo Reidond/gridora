@@ -1,0 +1,30 @@
+{
+  "name": "@gridora/web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "nuxt build",
+    "check": "nuxt typecheck",
+    "dev": "nuxt dev",
+    "generate": "nuxt generate",
+    "postinstall": "nuxt prepare",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@gridora/generated-client": "workspace:*",
+    "@gridora/server-plan-control": "workspace:*",
+    "@nuxt/ui": "catalog:",
+    "@tanstack/vue-query": "catalog:",
+    "@tanstack/vue-table": "catalog:",
+    "effect": "catalog:",
+    "nuxt": "catalog:"
+  },
+  "devDependencies": {
+    "@golar/vue": "0.1.10",
+    "@types/node": "catalog:",
+    "golar": "0.1.10",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

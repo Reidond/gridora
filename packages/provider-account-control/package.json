@@ -1,0 +1,28 @@
+{
+  "name": "@gridora/provider-account-control",
+  "version": "0.1.0",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json --noEmit",
+    "check": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --root ../.. packages/provider-account-control/test"
+  },
+  "dependencies": {
+    "@gridora/audit-contracts": "workspace:*",
+    "@gridora/contracts": "workspace:*",
+    "@gridora/domain": "workspace:*",
+    "@gridora/provider-sdk": "workspace:*",
+    "@gridora/secret-envelope": "workspace:*",
+    "effect": "catalog:"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

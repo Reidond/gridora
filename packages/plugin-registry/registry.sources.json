@@ -1,0 +1,12 @@
+[
+  {
+    "package": "@gridora/plugin-arma-reforger",
+    "export": "plugin",
+    "local": "armaReforger"
+  },
+  {
+    "package": "@gridora/plugin-valheim",
+    "export": "plugin",
+    "local": "valheim"
+  }
+]

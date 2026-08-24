@@ -1,0 +1,23 @@
+# The agent can use this profile only after it resolves an approved plugin host
+# and adds the resulting IP and port lease to nftables. The agent must remove the
+# lease when the install or runtime operation ends.
+services:
+  game:
+    image: ${GAME_IMAGE:?set an immutable digest}
+    user: '10001:10001'
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ['no-new-privileges:true']
+    networks: [game-permissioned-egress]
+    labels:
+      gridora.managed: 'true'
+      gridora.network-policy-id: ${GRIDORA_NETWORK_POLICY_ID:?}
+      gridora.organization-id: ${GRIDORA_ORGANIZATION_ID:?}
+      gridora.server-id: ${GRIDORA_SERVER_ID:?}
+networks:
+  game-permissioned-egress:
+    name: gridora-plugin-egress
+    internal: false
+    labels:
+      dev.gridora.network: plugin-egress
+      dev.gridora.network-policy: gridora-plugin-egress-v1

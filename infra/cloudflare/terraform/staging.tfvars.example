@@ -1,0 +1,9 @@
+account_id               = "00000000000000000000000000000000"
+environment              = "staging"
+enable_resource_creation = false
+enable_access_applications = false
+zone_name                    = "gridora.example"
+console_hostname             = "console.staging.gridora.example"
+public_app_hostname          = "app.staging.gridora.example"
+api_hostname                 = "api.staging.gridora.example"
+dns_target_hostname          = "nodes.staging.gridora.example"

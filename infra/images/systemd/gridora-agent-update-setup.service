@@ -1,0 +1,38 @@
+[Unit]
+Description=Prepare Gridora agent update trust boundary
+After=local-fs.target
+Before=gridora-agent.service gridora-agent-update.socket
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+User=root
+Group=root
+# Keep root setup in the immutable image helper for the same reason as the
+# socket service: update artifacts are never a root executable.
+ExecStart=/usr/local/bin/gridora-agent agent-update-helper --setup
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+ProtectProc=invisible
+RestrictSUIDSGID=true
+RestrictRealtime=true
+RestrictNamespaces=true
+LockPersonality=true
+SystemCallArchitectures=native
+RestrictAddressFamilies=AF_UNIX
+IPAddressDeny=any
+CapabilityBoundingSet=CAP_CHOWN CAP_DAC_OVERRIDE CAP_FOWNER
+ReadWritePaths=/var/lib/gridora/agent-updates
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

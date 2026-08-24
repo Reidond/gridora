@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+credential=/var/lib/gridora/tunnel/credential
+credential_directory=${CREDENTIALS_DIRECTORY:?systemd credential directory is required}
+handoff=${credential_directory}/tunnel-token
+
+case "${credential_directory}" in
+  /run/credentials/*) ;;
+  *) exit 1 ;;
+esac
+
+for directory in /var/lib/gridora /var/lib/gridora/tunnel; do
+  test -d "${directory}"
+  test ! -L "${directory}"
+  test "$(stat --format='%U' "${directory}")" = root
+  mode=$(stat --format='%a' "${directory}")
+  (( (8#${mode} & 0022) == 0 ))
+done
+
+test -f "${credential}"
+test ! -L "${credential}"
+test -s "${credential}"
+test "$(stat --format='%U:%G' "${credential}")" = root:root
+test "$(stat --format='%a' "${credential}")" = 600
+
+test -f "${handoff}"
+test ! -L "${handoff}"
+test -s "${handoff}"
+test "$(realpath "$(dirname "${handoff}")")" = "${credential_directory}"
+test "$(stat --format='%d:%i' "${credential}")" != "$(stat --format='%d:%i' "${handoff}")"
+cmp --silent "${credential}" "${handoff}"

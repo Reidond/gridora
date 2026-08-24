@@ -1,0 +1,77 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+work=$(mktemp -d)
+trap 'rm -rf "${work}"' EXIT
+ruleset="${work}/ruleset.json"
+response="${work}/response.json"
+
+nft_command=${GRIDORA_TEST_NFT_COMMAND:-/usr/sbin/nft}
+timeout 5s "${nft_command}" --json list table inet gridora >"${ruleset}" 2>/dev/null
+size=$(wc -c <"${ruleset}")
+[[ "${size}" -gt 0 && "${size}" -le 262144 ]]
+
+if command -v sha256sum >/dev/null; then
+  digest=$(sha256sum "${ruleset}" | cut -d' ' -f1)
+else
+  digest=$(shasum -a 256 "${ruleset}" | cut -d' ' -f1)
+fi
+
+jq -ce --arg digest "sha256:${digest}" '
+  def ports($name):
+    [.nftables[] | .set? |
+      select(.family == "inet" and .table == "gridora" and .name == $name)] as $sets |
+    if ($sets | length) != 1 then error("leased set is unavailable")
+    else [($sets[0].elem // [])[]] |
+      if length > 64 or any(.[]; (type != "number") or (floor != .) or . < 1 or . > 65535)
+      then error("leased set is invalid") else unique | sort end
+    end;
+  def expected_rules: [
+    {family:"inet",table:"gridora",chain:"input",expr:[
+      {match:{op:"in",left:{ct:{key:"state"}},right:"invalid"}},{drop:null}]},
+    {family:"inet",table:"gridora",chain:"input",expr:[
+      {match:{op:"in",left:{ct:{key:"state"}},right:["established","related"]}},{accept:null}]},
+    {family:"inet",table:"gridora",chain:"input",expr:[
+      {match:{op:"==",left:{meta:{key:"iifname"}},right:"lo"}},{accept:null}]},
+    {family:"inet",table:"gridora",chain:"input",expr:[
+      {match:{op:"==",left:{payload:{protocol:"ip",field:"protocol"}},right:1}},{accept:null}]},
+    {family:"inet",table:"gridora",chain:"input",expr:[
+      {match:{op:"==",left:{payload:{protocol:"ip6",field:"nexthdr"}},right:58}},{accept:null}]},
+    {family:"inet",table:"gridora",chain:"input",expr:[
+      {match:{op:"==",left:{payload:{protocol:"tcp",field:"dport"}},right:"@leased_tcp_ports"}},{accept:null}]},
+    {family:"inet",table:"gridora",chain:"input",expr:[
+      {match:{op:"==",left:{payload:{protocol:"udp",field:"dport"}},right:"@leased_udp_ports"}},{accept:null}]},
+    {family:"inet",table:"gridora",chain:"forward",expr:[
+      {match:{op:"in",left:{ct:{key:"state"}},right:["established","related"]}},{accept:null}]},
+    {family:"inet",table:"gridora",chain:"forward",expr:[
+      {match:{op:"==",left:{concat:[{meta:{key:"iifname"}},{payload:{protocol:"ip",field:"daddr"}},
+        {meta:{key:"l4proto"}},{payload:{protocol:"th",field:"dport"}}]},right:"@permitted_game_egress_v4"}},{accept:null}]},
+    {family:"inet",table:"gridora",chain:"forward",expr:[
+      {match:{op:"==",left:{payload:{protocol:"tcp",field:"dport"}},right:"@leased_tcp_ports"}},{accept:null}]},
+    {family:"inet",table:"gridora",chain:"forward",expr:[
+      {match:{op:"==",left:{payload:{protocol:"udp",field:"dport"}},right:"@leased_udp_ports"}},{accept:null}]}
+  ];
+  def canonical:
+    ([.nftables[] | (.table? // empty) | del(.handle)] == [{family:"inet",name:"gridora"}]) and
+    ([.nftables[] | (.set? // empty) | del(.handle,.elem,.timeout,."gc-interval")] == [
+      {family:"inet",name:"leased_tcp_ports",table:"gridora",type:"inet_service",flags:["interval"]},
+      {family:"inet",name:"leased_udp_ports",table:"gridora",type:"inet_service",flags:["interval"]},
+      {family:"inet",name:"permitted_game_egress_v4",table:"gridora",
+       type:["ifname","ipv4_addr","inet_proto","inet_service"],flags:["interval","timeout"]}
+    ]) and
+    ([.nftables[] | (.chain? // empty) | del(.handle)] == [
+      {family:"inet",table:"gridora",name:"input",type:"filter",hook:"input",prio:0,policy:"drop"},
+      {family:"inet",table:"gridora",name:"forward",type:"filter",hook:"forward",prio:0,policy:"drop"},
+      {family:"inet",table:"gridora",name:"output",type:"filter",hook:"output",prio:0,policy:"accept"}
+    ]) and
+    ([.nftables[] | (.rule? // empty) | del(.handle)] == expected_rules) and
+    (all(.nftables[]; has("metainfo") or has("table") or has("set") or has("chain") or has("rule")));
+  (ports("leased_tcp_ports")) as $tcp |
+  (ports("leased_udp_ports")) as $udp |
+  if canonical then
+    {schemaVersion:1, defaultDeny:true, allowedTcpPorts:$tcp,
+     allowedUdpPorts:$udp, rulesetSha256:$digest, ready:true}
+  else error("firewall graph is not canonical") end
+' "${ruleset}" >"${response}"
+[[ $(wc -c <"${response}") -le 16384 ]]
+cat "${response}"

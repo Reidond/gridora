@@ -1,0 +1,321 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  verify-evidence:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ github.sha }}
+      - name: Verify the remote tag and repository governance
+        env:
+          EVIDENCE_TOKEN: ${{ secrets.RELEASE_EVIDENCE_TOKEN }}
+          REPOSITORY: ${{ github.repository }}
+          TAG_NAME: ${{ github.ref_name }}
+          TAG_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          : "${EVIDENCE_TOKEN:?RELEASE_EVIDENCE_TOKEN is required}"
+          [[ "$TAG_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$ ]]
+          test "$(git rev-parse "${TAG_NAME}^{commit}")" = "$TAG_SHA"
+
+          api() {
+            GH_TOKEN="$EVIDENCE_TOKEN" gh api \
+              -H 'X-GitHub-Api-Version: 2026-03-10' "$@"
+          }
+
+          resolve_remote_tag() {
+            local object object_type object_sha depth
+            object=$(api "repos/$REPOSITORY/git/ref/tags/$TAG_NAME" --jq '.object | [.type, .sha] | @tsv')
+            IFS=$'\t' read -r object_type object_sha <<<"$object"
+            depth=0
+            while [[ "$object_type" == tag ]]; do
+              ((depth += 1))
+              ((depth <= 5))
+              object=$(api "repos/$REPOSITORY/git/tags/$object_sha" --jq '.object | [.type, .sha] | @tsv')
+              IFS=$'\t' read -r object_type object_sha <<<"$object"
+            done
+            test "$object_type" = commit
+            printf '%s\n' "$object_sha"
+          }
+
+          test "$(resolve_remote_tag)" = "$TAG_SHA"
+
+          installation_repositories=$(api --paginate --slurp --method GET \
+            installation/repositories -f per_page=100)
+          jq -e --arg repository "$REPOSITORY" '
+            [.[].repositories[]]
+            | length == 1 and any(.full_name == $repository)
+          ' <<<"$installation_repositories" >/dev/null
+
+          default_branch=$(api "repos/$REPOSITORY" --jq '.default_branch')
+          test "$default_branch" = main
+          comparison=$(api "repos/$REPOSITORY/compare/${TAG_SHA}...main")
+          jq -e '.status == "ahead" or .status == "identical"' <<<"$comparison" >/dev/null
+
+          protection=$(api "repos/$REPOSITORY/branches/main/protection")
+          jq -e '
+            .required_status_checks.strict == true and
+            .required_pull_request_reviews.required_approving_review_count >= 1 and
+            (
+              .required_pull_request_reviews.dismiss_stale_reviews == true or
+              .required_pull_request_reviews.require_last_push_approval == true
+            )
+          ' <<<"$protection" >/dev/null
+
+          owner=${REPOSITORY%%/*}
+          repository_name=${REPOSITORY#*/}
+          approval=$(api graphql \
+            -F owner="$owner" \
+            -F name="$repository_name" \
+            -F sha="$TAG_SHA" \
+            -f query='query($owner: String!, $name: String!, $sha: GitObjectID!) {
+              repository(owner: $owner, name: $name) {
+                environment(name: "production-release") {
+                  name
+                  protectionRules(first: 100) {
+                    nodes {
+                      preventSelfReview
+                      reviewers(first: 100) { totalCount }
+                      type
+                    }
+                  }
+                }
+                object(oid: $sha) {
+                  ... on Commit {
+                    associatedPullRequests(first: 20) {
+                      nodes {
+                        baseRefName
+                        headRefOid
+                        mergedAt
+                        mergeCommit { oid }
+                        reviews(last: 100, states: [APPROVED]) {
+                          nodes {
+                            commit { oid }
+                            state
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }')
+          jq -e --arg sha "$TAG_SHA" '
+            .data.repository.object.associatedPullRequests.nodes
+            | any(. as $pr |
+                $pr.baseRefName == "main" and
+                $pr.mergedAt != null and
+                $pr.mergeCommit.oid == $sha and
+                ($pr.reviews.nodes | any(
+                  .state == "APPROVED" and
+                  .commit.oid == $pr.headRefOid
+                ))
+              )
+          ' <<<"$approval" >/dev/null
+
+          jq -e '
+            .data.repository.environment.name == "production-release" and
+            any(.data.repository.environment.protectionRules.nodes[]?;
+              .type == "REQUIRED_REVIEWERS" and
+              .preventSelfReview == true and
+              .reviewers.totalCount >= 1
+            )
+          ' <<<"$approval" >/dev/null
+
+          ruleset_summaries=$(api --paginate --slurp --method GET \
+            "repos/$REPOSITORY/rulesets" \
+            -f includes_parents=true \
+            -f per_page=100 \
+            -f targets=tag)
+          rulesets='[]'
+          while IFS= read -r ruleset_id; do
+            [[ -n "$ruleset_id" ]] || continue
+            ruleset=$(api --method GET "repos/$REPOSITORY/rulesets/$ruleset_id" \
+              -f includes_parents=true)
+            rulesets=$(jq -cn \
+              --argjson current "$rulesets" \
+              --argjson next "$ruleset" \
+              '$current + [$next]')
+          done < <(jq -r 'add // [] | .[].id' <<<"$ruleset_summaries")
+          jq -e --arg tag "$TAG_NAME" '
+            any(.[];
+              .target == "tag" and
+              .enforcement == "active" and
+              ((.conditions.ref_name.include // []) | any(
+                . == "~ALL" or
+                . == "refs/tags/v*" or
+                . == ("refs/tags/" + $tag)
+              )) and
+              ((.conditions.ref_name.exclude // []) | length == 0) and
+              ((has("bypass_actors") | not) or (.bypass_actors | length == 0)) and
+              ([.rules[].type] | index("update") != null) and
+              ([.rules[].type] | index("deletion") != null)
+            )
+          ' <<<"$rulesets" >/dev/null
+      - name: Require successful workflows for the exact tag commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          TAG_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+
+          require_successful_workflow() {
+            local workflow_file=$1
+            local display_name=$2
+            local run status conclusion url
+
+            for attempt in $(seq 1 60); do
+              run=$(gh api --method GET \
+                "repos/$REPOSITORY/actions/workflows/$workflow_file/runs" \
+                -f head_sha="$TAG_SHA" \
+                -f per_page=100 \
+                | jq -c --arg sha "$TAG_SHA" '.workflow_runs
+                  | map(select(.head_sha == $sha and .event == "push" and .head_branch == "main"))
+                  | sort_by(.run_attempt, .created_at)
+                  | reverse
+                  | .[0] // empty')
+
+              if [[ -n "$run" ]]; then
+                status=$(jq -r '.status' <<<"$run")
+                conclusion=$(jq -r '.conclusion // ""' <<<"$run")
+                url=$(jq -r '.html_url' <<<"$run")
+                if [[ "$status" == completed ]]; then
+                  if [[ "$conclusion" == success ]]; then
+                    printf '%s passed for %s: %s\n' "$display_name" "$TAG_SHA" "$url"
+                    return 0
+                  fi
+                  printf '%s concluded %s for %s: %s\n' "$display_name" "$conclusion" "$TAG_SHA" "$url" >&2
+                  return 1
+                fi
+              fi
+
+              if (( attempt == 60 )); then
+                printf 'No successful completed %s push run exists for %s.\n' "$display_name" "$TAG_SHA" >&2
+                return 1
+              fi
+              sleep 15
+            done
+          }
+
+          require_successful_workflow ci.yml CI
+          require_successful_workflow security.yml Security
+          bash infra/scripts/verify-release-image-evidence.sh
+
+  release:
+    needs: verify-evidence
+    runs-on: ubuntu-24.04
+    environment: production-release
+    timeout-minutes: 25
+    permissions:
+      actions: read
+      contents: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ github.sha }}
+      - name: Re-resolve the remote tag before building assets
+        env:
+          EVIDENCE_TOKEN: ${{ secrets.RELEASE_EVIDENCE_TOKEN }}
+          REPOSITORY: ${{ github.repository }}
+          TAG_NAME: ${{ github.ref_name }}
+          TAG_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          : "${EVIDENCE_TOKEN:?RELEASE_EVIDENCE_TOKEN is required}"
+          resolve_remote_tag() {
+            local object object_type object_sha depth
+            object=$(GH_TOKEN="$EVIDENCE_TOKEN" gh api \
+              -H 'X-GitHub-Api-Version: 2026-03-10' \
+              "repos/$REPOSITORY/git/ref/tags/$TAG_NAME" \
+              --jq '.object | [.type, .sha] | @tsv')
+            IFS=$'\t' read -r object_type object_sha <<<"$object"
+            depth=0
+            while [[ "$object_type" == tag ]]; do
+              ((depth += 1))
+              ((depth <= 5))
+              object=$(GH_TOKEN="$EVIDENCE_TOKEN" gh api \
+                -H 'X-GitHub-Api-Version: 2026-03-10' \
+                "repos/$REPOSITORY/git/tags/$object_sha" \
+                --jq '.object | [.type, .sha] | @tsv')
+              IFS=$'\t' read -r object_type object_sha <<<"$object"
+            done
+            test "$object_type" = commit
+            printf '%s\n' "$object_sha"
+          }
+          test "$(resolve_remote_tag)" = "$TAG_SHA"
+      - name: Revalidate protected Node image evidence after production approval
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          TAG_SHA: ${{ github.sha }}
+        run: bash infra/scripts/verify-release-image-evidence.sh
+      - name: Create reproducible source archive
+        run: |
+          git archive --format=tar.gz --prefix="gridora-${GITHUB_REF_NAME}/" -o "gridora-${GITHUB_REF_NAME}.tar.gz" "$GITHUB_SHA"
+          sha256sum "gridora-${GITHUB_REF_NAME}.tar.gz" > SHA256SUMS
+      - uses: sigstore/cosign-installer@d7543c93d881b35a8faa02e8e3605f69b7a1ce62 # v3.10.0
+      - name: Sign release archive with GitHub OIDC
+        run: cosign sign-blob --yes --bundle "gridora-${GITHUB_REF_NAME}.tar.gz.sigstore.json" "gridora-${GITHUB_REF_NAME}.tar.gz"
+      - name: Publish immutable release assets
+        env:
+          EVIDENCE_TOKEN: ${{ secrets.RELEASE_EVIDENCE_TOKEN }}
+          PUBLISH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          TAG_NAME: ${{ github.ref_name }}
+          TAG_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          : "${EVIDENCE_TOKEN:?RELEASE_EVIDENCE_TOKEN is required}"
+          : "${PUBLISH_TOKEN:?GitHub publication token is required}"
+          resolve_remote_tag() {
+            local object object_type object_sha depth
+            object=$(GH_TOKEN="$EVIDENCE_TOKEN" gh api \
+              -H 'X-GitHub-Api-Version: 2026-03-10' \
+              "repos/$REPOSITORY/git/ref/tags/$TAG_NAME" \
+              --jq '.object | [.type, .sha] | @tsv')
+            IFS=$'\t' read -r object_type object_sha <<<"$object"
+            depth=0
+            while [[ "$object_type" == tag ]]; do
+              ((depth += 1))
+              ((depth <= 5))
+              object=$(GH_TOKEN="$EVIDENCE_TOKEN" gh api \
+                -H 'X-GitHub-Api-Version: 2026-03-10' \
+                "repos/$REPOSITORY/git/tags/$object_sha" \
+                --jq '.object | [.type, .sha] | @tsv')
+              IFS=$'\t' read -r object_type object_sha <<<"$object"
+            done
+            test "$object_type" = commit
+            printf '%s\n' "$object_sha"
+          }
+          test "$(resolve_remote_tag)" = "$TAG_SHA"
+          GH_TOKEN="$PUBLISH_TOKEN" REPOSITORY="$REPOSITORY" TAG_SHA="$TAG_SHA" \
+            bash infra/scripts/verify-release-image-evidence.sh
+          GH_TOKEN="$PUBLISH_TOKEN" gh release create "$TAG_NAME" \
+            "gridora-${TAG_NAME}.tar.gz" \
+            "gridora-${TAG_NAME}.tar.gz.sigstore.json" \
+            SHA256SUMS \
+            --target "$TAG_SHA" \
+            --verify-tag \
+            --generate-notes

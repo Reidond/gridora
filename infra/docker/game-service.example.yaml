@@ -1,0 +1,26 @@
+services:
+  game:
+    image: ${GAME_IMAGE:?set an immutable digest}
+    user: '10001:10001'
+    read_only: true
+    restart: unless-stopped
+    cap_drop: [ALL]
+    security_opt: ['no-new-privileges:true']
+    pids_limit: 512
+    mem_limit: 8g
+    cpus: 4
+    networks:
+      - game-isolated
+    volumes:
+      - ${SERVER_ROOT:?}/game:/opt/game:ro
+      - ${SERVER_ROOT:?}/config:/opt/config:ro
+      - ${SERVER_ROOT:?}/data:/opt/data:rw
+      - ${SERVER_ROOT:?}/mods:/opt/mods:ro
+    labels:
+      gridora.managed: 'true'
+      gridora.organization-id: ${GRIDORA_ORGANIZATION_ID:?}
+      gridora.server-id: ${GRIDORA_SERVER_ID:?}
+      gridora.deployment-revision: ${GRIDORA_DEPLOYMENT_REVISION:?}
+networks:
+  game-isolated:
+    internal: true

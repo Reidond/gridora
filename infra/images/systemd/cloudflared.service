@@ -1,0 +1,29 @@
+[Unit]
+Description=Gridora Cloudflare Tunnel connector
+After=network-online.target
+Wants=network-online.target
+ConditionPathExists=/var/lib/gridora/tunnel/credential
+
+[Service]
+Type=simple
+User=cloudflared
+Group=cloudflared
+LoadCredential=tunnel-token:/var/lib/gridora/tunnel/credential
+ExecStart=/usr/local/bin/cloudflared tunnel --no-autoupdate --metrics 127.0.0.1:20000 run --token-file ${CREDENTIALS_DIRECTORY}/tunnel-token
+Restart=on-failure
+RestartSec=5s
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+UMask=0077
+ExecStartPre=+/usr/local/libexec/gridora/validate-cloudflared-token
+
+[Install]
+WantedBy=multi-user.target

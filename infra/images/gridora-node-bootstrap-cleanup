@@ -1,0 +1,86 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+root=${GRIDORA_TEST_ROOT:-}
+if [[ -n "${root}" ]]; then
+  [[ "${root}" == /* && "${root}" != *'/../'* && "${root}" != */.. && -d "${root}" ]]
+  root=$(cd "${root}" && pwd -P)
+fi
+
+fail() {
+  printf 'gridora-node-bootstrap-cleanup: %s\n' "$1" >&2
+  exit 1
+}
+
+regular() { [[ -f "$1" && ! -L "$1" ]] || fail "handoff file is unavailable"; }
+file_uid() { stat -c '%u' "$1" 2>/dev/null || stat -f '%u' "$1"; }
+file_mode() { stat -c '%a' "$1" 2>/dev/null || stat -f '%Lp' "$1"; }
+remove_secret() {
+  if command -v shred >/dev/null; then
+    shred --force --remove=unlink --zero "$1"
+  elif [[ -n "${root}" ]]; then
+    dd if=/dev/zero of="$1" bs=4096 count=1 conv=notrunc 2>/dev/null || true
+    rm -f "$1"
+  else
+    fail "secure removal utility is unavailable"
+  fi
+}
+
+state="${root}/var/lib/gridora/bootstrap"
+completion="${state}/handoff.complete"
+authentication="${root}/var/lib/gridora/agent/node-credential"
+registration_complete="${root}/var/lib/gridora/agent/registration-complete"
+regular "${completion}"
+regular "${root}/etc/gridora/agent.json"
+regular "${root}/etc/gridora/command-signing-public.pem"
+regular "${root}/etc/gridora/image-attestation.json"
+regular "${authentication}"
+regular "${registration_complete}"
+
+[[ ! -e "${state}/registration-token" ]] || fail "registration is not complete"
+[[ $(file_mode "${authentication}") == 600 ]] || fail "authentication mode is invalid"
+[[ $(file_mode "${registration_complete}") == 600 ]] || fail "registration marker mode is invalid"
+agent_uid=${GRIDORA_TEST_AGENT_UID:-}
+if [[ -z "${agent_uid}" ]]; then agent_uid=$(id -u gridora-agent); fi
+[[ $(file_uid "${authentication}") == "${agent_uid}" ]] || fail "authentication owner is invalid"
+[[ $(file_uid "${registration_complete}") == "${agent_uid}" ]] || fail "registration marker owner is invalid"
+
+expected_completion_keys='["nodeId","operationId","organizationId","providerImageId","providerInstanceId","providerType","reservationSha256"]'
+expected_authentication_keys='["credentialId","credentialVersion","nodeCredential","nodeId","organizationId","schemaVersion","sessionVersion"]'
+expected_marker_keys='["credentialId","credentialVersion","nodeId","organizationId","schemaVersion","sessionVersion"]'
+jq -e --argjson expected "${expected_completion_keys}" '
+  type == "object" and keys == $expected and
+  (.organizationId | type == "string") and (.nodeId | type == "string") and
+  (.operationId | type == "string") and (.providerImageId | type == "string") and
+  (.providerInstanceId | type == "string") and
+  (.providerType == "ovhcloud" or .providerType == "contabo") and
+  (.reservationSha256 | type == "string" and test("^[a-f0-9]{64}$"))
+' "${completion}" >/dev/null || fail "handoff completion is invalid"
+organization_id=$(jq -r '.organizationId' "${completion}")
+node_id=$(jq -r '.nodeId' "${completion}")
+jq -e --argjson expected "${expected_authentication_keys}" \
+  --arg organizationId "${organization_id}" --arg nodeId "${node_id}" '
+  type == "object" and keys == $expected and .schemaVersion == 1 and
+  .organizationId == $organizationId and .nodeId == $nodeId and
+  (.nodeCredential | type == "string" and length >= 32 and length <= 512) and
+  (.credentialId | type == "string" and test("^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")) and
+  (.credentialVersion | type == "number" and floor == . and . >= 1) and
+  (.sessionVersion | type == "number" and floor == . and . >= 1)
+' "${authentication}" >/dev/null || fail "authentication record is invalid"
+jq -e --argjson expected "${expected_marker_keys}" \
+  --slurpfile authentication "${authentication}" '
+  type == "object" and keys == $expected and .schemaVersion == 1 and
+  .organizationId == $authentication[0].organizationId and
+  .nodeId == $authentication[0].nodeId and
+  .credentialId == $authentication[0].credentialId and
+  .credentialVersion == $authentication[0].credentialVersion and
+  .sessionVersion == $authentication[0].sessionVersion
+' "${registration_complete}" >/dev/null || fail "registration marker is invalid"
+
+reservation="${state}/reservation.json"
+if [[ -e "${reservation}" ]]; then
+  regular "${reservation}"
+  remove_secret "${reservation}"
+fi
+cleanup_helper=${GRIDORA_TEST_CLEANUP_HELPER:-/usr/local/libexec/gridora/clean-cloud-init-sensitive-cache}
+GRIDORA_TEST_ROOT="${root}" "${cleanup_helper}"

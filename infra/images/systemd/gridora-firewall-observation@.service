@@ -1,0 +1,31 @@
+[Unit]
+Description=Gridora fixed firewall observation
+Documentation=https://github.com/Reidond/gridora/blob/main/docs/adr/0045-promoted-image-bootstrap-handoff.md
+
+[Service]
+Type=exec
+User=root
+Group=root
+StandardInput=socket
+StandardOutput=socket
+StandardError=journal
+ExecStart=/usr/local/libexec/gridora/gridora-firewall-observation
+RuntimeMaxSec=7s
+MemoryMax=32M
+TasksMax=16
+UMask=0077
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+LockPersonality=true
+RestrictAddressFamilies=AF_UNIX AF_NETLINK
+IPAddressDeny=any
+CapabilityBoundingSet=CAP_NET_ADMIN
+AmbientCapabilities=CAP_NET_ADMIN

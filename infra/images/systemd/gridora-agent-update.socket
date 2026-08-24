@@ -1,0 +1,15 @@
+[Unit]
+Description=Gridora root agent update helper socket
+Requires=gridora-agent-update-setup.service
+After=gridora-agent-update-setup.service
+
+[Socket]
+ListenStream=/run/gridora/agent-update.sock
+SocketUser=root
+SocketGroup=gridora-agent
+SocketMode=0660
+DirectoryMode=0750
+RemoveOnStop=true
+
+[Install]
+WantedBy=sockets.target

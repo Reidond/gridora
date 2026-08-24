@@ -1,0 +1,28 @@
+{
+  "name": "@gridora/plugin-arma-reforger",
+  "version": "0.1.0",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json --noEmit",
+    "check": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --root ../../.. plugins/games/arma-reforger/src"
+  },
+  "dependencies": {
+    "@gridora/plugin-sdk": "workspace:*",
+    "@gridora/plugin-sdk-agent": "workspace:*",
+    "@gridora/plugin-sdk-control": "workspace:*",
+    "@gridora/plugin-sdk-ui": "workspace:*",
+    "@gridora/plugin-testkit": "workspace:*",
+    "@gridora/steam-runtime": "workspace:*",
+    "effect": "catalog:"
+  },
+  "devDependencies": {
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

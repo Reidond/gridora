@@ -1,0 +1,31 @@
+{
+  "name": "@gridora/cli",
+  "version": "0.1.0",
+  "private": true,
+  "bin": {
+    "gridora": "./dist/main.mjs"
+  },
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "build": "tsdown src/main.ts --format esm --out-dir dist",
+    "check": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --root ../.. apps/cli/test"
+  },
+  "dependencies": {
+    "@gridora/game-lifecycle-control": "workspace:*",
+    "@gridora/game-server-manifest-control": "workspace:*",
+    "@gridora/generated-client": "workspace:*",
+    "@gridora/server-plan-control": "workspace:*",
+    "effect": "catalog:",
+    "yaml": "^2.8.1"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "tsdown": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

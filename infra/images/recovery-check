@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+test -s /etc/gridora/image-version
+systemctl is-active --quiet docker
+nft list table inet gridora >/dev/null
+install -d -o gridora-agent -g gridora-agent -m 0750 /run/gridora

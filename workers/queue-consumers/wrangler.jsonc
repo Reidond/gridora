@@ -1,0 +1,116 @@
+{
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "gridora-queue-consumers",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-23",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": false,
+  "preview_urls": false,
+  "secrets": { "required": ["INTERNAL_SERVICE_SECRET", "INVITATION_TOKEN_SECRET"] },
+  "vars": {
+    "INVITATION_TOKEN_KEY_VERSION": "v1",
+    "PUBLIC_APP_URL": "https://app.gridora.example",
+    "INVITATION_EMAIL_FROM": "invitations@gridora.example",
+  },
+  "send_email": [
+    {
+      "name": "INVITATION_EMAIL",
+      "allowed_sender_addresses": ["invitations@gridora.example"],
+    },
+  ],
+  "services": [{ "binding": "APPLICATION", "service": "gridora-api" }],
+  "workflows": [
+    {
+      "binding": "RECONCILE_ORPHAN",
+      "name": "gridora-reconcile-orphan",
+      "class_name": "ReconcileOrphanWorkflow",
+      "script_name": "gridora-workflows",
+    },
+    {
+      "binding": "RECONCILE_POLICY",
+      "name": "gridora-reconcile-policy",
+      "class_name": "ReconcilePolicyWorkflow",
+      "script_name": "gridora-workflows",
+    },
+  ],
+  "d1_databases": [{ "binding": "DB", "database_name": "gridora-control-plane" }],
+  "r2_buckets": [
+    { "binding": "AUDIT_ARCHIVE", "bucket_name": "gridora-audit-archive" },
+    { "binding": "LOGS", "bucket_name": "gridora-logs" },
+    { "binding": "NOTIFICATION_REMEDIATION", "bucket_name": "gridora-notification-remediation" },
+  ],
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "ORGANIZATION_EVENTS",
+        "class_name": "OrganizationEventsDO",
+        "script_name": "gridora-realtime",
+      },
+      {
+        "name": "LIVE_LOG_STREAM",
+        "class_name": "LiveLogStreamDO",
+        "script_name": "gridora-realtime",
+      },
+    ],
+  },
+  "queues": {
+    "producers": [
+      { "binding": "RECONCILIATION_QUEUE", "queue": "gridora-reconciliation" },
+      { "binding": "POLICY_RECONCILIATION_QUEUE", "queue": "gridora-policy-reconciliation" },
+      { "binding": "AUDIT_EXPORT", "queue": "gridora-audit-export" },
+    ],
+    "consumers": [
+      {
+        "queue": "gridora-agent-events",
+        "max_batch_size": 25,
+        "max_batch_timeout": 5,
+        "max_retries": 8,
+        "dead_letter_queue": "gridora-agent-events-dlq",
+      },
+      {
+        "queue": "gridora-telemetry",
+        "max_batch_size": 50,
+        "max_batch_timeout": 5,
+        "max_retries": 5,
+        "dead_letter_queue": "gridora-telemetry-dlq",
+      },
+      {
+        "queue": "gridora-audit-export",
+        "max_batch_size": 25,
+        "max_batch_timeout": 10,
+        "max_retries": 8,
+        "dead_letter_queue": "gridora-audit-export-dlq",
+      },
+      {
+        "queue": "gridora-reconciliation",
+        "max_batch_size": 10,
+        "max_batch_timeout": 5,
+        "max_retries": 8,
+        "dead_letter_queue": "gridora-reconciliation-dlq",
+      },
+      {
+        "queue": "gridora-policy-reconciliation",
+        "max_batch_size": 10,
+        "max_batch_timeout": 5,
+        "max_retries": 8,
+        "dead_letter_queue": "gridora-policy-reconciliation-dlq",
+      },
+      {
+        "queue": "gridora-notifications",
+        "max_batch_size": 25,
+        "max_batch_timeout": 10,
+        "max_retries": 5,
+        "dead_letter_queue": "gridora-notifications-dlq",
+      },
+      {
+        "queue": "gridora-outbox-publisher",
+        "max_batch_size": 10,
+        "max_batch_timeout": 1,
+        "max_retries": 8,
+        "dead_letter_queue": "gridora-outbox-publisher-dlq",
+      },
+    ],
+  },
+  "triggers": { "crons": ["*/10 * * * *"] },
+  "observability": { "enabled": true, "head_sampling_rate": 0.1 },
+}

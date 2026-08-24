@@ -1,0 +1,35 @@
+[Unit]
+Description=Gridora node agent
+After=network-online.target docker.service cloudflared.service gridora-quota.socket gridora-tunnel-installer.socket gridora-agent-update-setup.service gridora-agent-update.socket gridora-node-bootstrap.service gridora-plugin-egress-network.service gridora-plugin-egress-lease.socket
+Wants=network-online.target
+Requires=docker.service gridora-quota.socket gridora-tunnel-installer.socket gridora-agent-update-setup.service gridora-agent-update.socket gridora-firewall-observation.socket gridora-node-bootstrap.service gridora-plugin-egress-network.service gridora-plugin-egress-lease.socket
+ConditionPathExists=/etc/gridora/agent.json
+
+[Service]
+Type=simple
+User=gridora-agent
+Group=gridora-agent
+# The quota helper owns server data/config roots as UID/GID 10001. This fixed
+# supplementary group permits atomic config/mod staging without giving game
+# processes membership in the agent's credential group.
+SupplementaryGroups=10001
+ExecStart=/usr/local/libexec/gridora/gridora-agent-current serve --config /etc/gridora/agent.json
+Restart=on-failure
+RestartSec=5s
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+LockPersonality=true
+SystemCallArchitectures=native
+ReadWritePaths=/var/lib/gridora /var/log/gridora /var/run/docker.sock
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

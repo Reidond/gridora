@@ -1,0 +1,30 @@
+[Unit]
+Description=Gridora bounded plugin egress lease
+
+[Service]
+Type=exec
+User=root
+Group=root
+StandardInput=socket
+StandardOutput=socket
+StandardError=journal
+ExecStart=/usr/local/libexec/gridora/gridora-plugin-egress-lease
+RuntimeMaxSec=30s
+MemoryMax=32M
+TasksMax=16
+UMask=0077
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+LockPersonality=true
+RestrictAddressFamilies=AF_UNIX AF_NETLINK
+IPAddressDeny=any
+CapabilityBoundingSet=CAP_NET_ADMIN
+AmbientCapabilities=CAP_NET_ADMIN

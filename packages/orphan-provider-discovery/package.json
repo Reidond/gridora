@@ -1,0 +1,27 @@
+{
+  "name": "@gridora/orphan-provider-discovery",
+  "version": "0.1.0",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json --noEmit",
+    "check": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --root ../.. packages/orphan-provider-discovery/test"
+  },
+  "dependencies": {
+    "@gridora/contracts": "workspace:*",
+    "@gridora/orphan-control": "workspace:*",
+    "@gridora/provider-sdk": "workspace:*",
+    "effect": "catalog:"
+  },
+  "devDependencies": {
+    "@gridora/provider-contabo": "workspace:*",
+    "@gridora/provider-ovh-public-cloud": "workspace:*",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

@@ -1,0 +1,32 @@
+{
+  "name": "@gridora/workflows",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "build": "wrangler deploy --dry-run --outdir dist",
+    "check": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run --root ../.. workers/workflows/test"
+  },
+  "dependencies": {
+    "@gridora/agent-protocol": "workspace:*",
+    "@gridora/auth-cloudflare-access": "workspace:*",
+    "@gridora/backup-workflow": "workspace:*",
+    "@gridora/game-lifecycle-execution": "workspace:*",
+    "@gridora/node-image-workflow": "workspace:*",
+    "@gridora/observability": "workspace:*",
+    "@gridora/orphan-schedule": "workspace:*",
+    "@gridora/policy-reconciliation-control": "workspace:*",
+    "@gridora/policy-schedule": "workspace:*",
+    "@gridora/realtime": "workspace:*",
+    "effect": "catalog:"
+  },
+  "devDependencies": {
+    "typescript": "catalog:",
+    "vitest": "catalog:",
+    "wrangler": "catalog:"
+  }
+}

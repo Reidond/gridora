@@ -1,0 +1,41 @@
+packages:
+  - apps/*
+  - packages/*
+  - plugins/games/*
+  - workers/*
+
+allowBuilds:
+  esbuild: true
+  msgpackr-extract: false
+  vue-demi: true
+  workerd: true
+
+overrides:
+  esbuild: 0.28.1
+
+catalog:
+  '@cloudflare/vitest-pool-workers': 0.22.0
+  '@cloudflare/workers-types': 5.20260823.1
+  '@effect/opentelemetry': 4.0.0-rc.111
+  '@effect/platform-node': 4.0.0-rc.111
+  '@effect/sql-d1': 4.0.0-rc.111
+  '@effect/vitest': 4.0.0-rc.111
+  '@nuxt/ui': 4.11.0
+  '@tanstack/vue-query': 5.102.0
+  '@tanstack/vue-table': 9.1.2
+  '@types/node': 26.2.0
+  effect: 4.0.0-rc.111
+  hono: 4.13.3
+  nuxt: 4.5.2
+  tsdown: 0.22.14
+  typescript: 7.0.2
+  vite: 8.2.2
+  vite-plus: 0.2.9
+  vitest: 4.1.10
+  wrangler: 4.125.0
+  yaml: 2.9.0
+
+minimumReleaseAgeExclude:
+  - '@cloudflare/workers-types@5.20260823.1'
+  - '@tanstack/query-core@5.102.0'
+  - '@tanstack/vue-query@5.102.0'

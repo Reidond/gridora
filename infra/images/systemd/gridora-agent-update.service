@@ -1,0 +1,41 @@
+[Unit]
+Description=Gridora root agent update helper
+Requires=gridora-agent-update.socket
+After=local-fs.target gridora-agent-update-setup.service
+Before=gridora-agent.service
+
+[Service]
+Type=simple
+User=root
+Group=root
+# This is deliberately the image-baked root helper, not the mutable current
+# agent release. A release-signing key can authorize agent code, not a new
+# privileged helper protocol.
+ExecStart=/usr/local/bin/gridora-agent agent-update-helper --listen-fd 3
+Restart=on-failure
+RestartSec=5s
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+ProtectProc=invisible
+RestrictSUIDSGID=true
+RestrictRealtime=true
+RestrictNamespaces=true
+LockPersonality=true
+SystemCallArchitectures=native
+RestrictAddressFamilies=AF_UNIX
+IPAddressDeny=any
+CapabilityBoundingSet=CAP_CHOWN CAP_DAC_OVERRIDE CAP_FOWNER
+ReadWritePaths=/var/lib/gridora/agent-updates
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

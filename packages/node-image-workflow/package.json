@@ -1,0 +1,24 @@
+{
+  "name": "@gridora/node-image-workflow",
+  "version": "0.1.0",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json --noEmit",
+    "check": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --root ../.. packages/node-image-workflow/test"
+  },
+  "dependencies": {
+    "@gridora/auth-cloudflare-access": "workspace:*",
+    "@gridora/node-image-control": "workspace:*",
+    "effect": "catalog:"
+  },
+  "devDependencies": {
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

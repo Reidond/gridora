@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+docker_command=${GRIDORA_TEST_DOCKER_COMMAND:-/usr/bin/docker}
+network=gridora-plugin-egress
+
+if ! "${docker_command}" network inspect "${network}" >/dev/null 2>&1; then
+  "${docker_command}" network create \
+    --driver bridge \
+    --opt com.docker.network.bridge.name=gridora-egress0 \
+    --label dev.gridora.network=plugin-egress \
+    --label dev.gridora.network-policy=gridora-plugin-egress-v1 \
+    "${network}" >/dev/null
+fi
+
+"${docker_command}" network inspect "${network}" | jq -e '
+  length == 1 and
+  .[0].Name == "gridora-plugin-egress" and
+  .[0].Driver == "bridge" and
+  .[0].Internal == false and
+  .[0].Attachable == false and
+  .[0].Options["com.docker.network.bridge.name"] == "gridora-egress0" and
+  .[0].Labels["dev.gridora.network"] == "plugin-egress" and
+  .[0].Labels["dev.gridora.network-policy"] == "gridora-plugin-egress-v1"
+' >/dev/null

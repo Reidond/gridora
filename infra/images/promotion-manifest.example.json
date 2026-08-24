@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "state": "testing",
+  "sourceCommit": "0000000000000000000000000000000000000000",
+  "image": {
+    "name": "gridora-node-2026-08-23.1-amd64.qcow2",
+    "version": "2026-08-23.1",
+    "architecture": "amd64",
+    "format": "qcow2",
+    "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "signature": {
+    "schemaVersion": 1,
+    "algorithm": "ed25519",
+    "buildIdentityManifestSha256": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+    "buildIdentitySignatureSha256": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+    "buildIdentityPublicKeySha256": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "evidence": {
+    "sbom": "gridora-node-2026-08-23.1-amd64.qcow2.spdx.json",
+    "rootfsArchive": "gridora-node-2026-08-23.1-amd64.qcow2.rootfs.tar",
+    "rootfsEvidence": "gridora-node-2026-08-23.1-amd64.qcow2.rootfs-evidence.json",
+    "signature": "gridora-node-2026-08-23.1-amd64.qcow2.sigstore.json",
+    "inputs": "gridora-node-2026-08-23.1-amd64.qcow2.inputs.json",
+    "buildIdentityManifest": "gridora-node-2026-08-23.1-amd64.qcow2.identity.json",
+    "buildIdentitySignature": "gridora-node-2026-08-23.1-amd64.qcow2.identity.sig",
+    "buildIdentityPublicKey": "gridora-node-2026-08-23.1-amd64.qcow2.identity-public.pem",
+    "buildLog": "gridora-node-2026-08-23.1-amd64.qcow2.build.log",
+    "imageTestLog": "gridora-node-2026-08-23.1-amd64.qcow2.image-test.log",
+    "scanLog": "gridora-node-2026-08-23.1-amd64.qcow2.scan.log",
+    "integrity": {
+      "rootfsArchiveSha256": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+      "rootfsEvidenceSha256": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+      "sbomSha256": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+    }
+  }
+}

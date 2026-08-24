@@ -1,0 +1,25 @@
+{
+  "name": "@gridora/plugin-registry",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "build": "node scripts/generate.mjs --check && tsc -p tsconfig.json --noEmit",
+    "check": "node scripts/generate.mjs --check && tsc -p tsconfig.json --noEmit",
+    "generate": "node scripts/generate.mjs",
+    "test": "cd ../.. && vitest run packages/plugin-registry/test"
+  },
+  "dependencies": {
+    "@gridora/contracts": "workspace:*",
+    "@gridora/plugin-arma-reforger": "workspace:*",
+    "@gridora/plugin-sdk": "workspace:*",
+    "@gridora/plugin-valheim": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

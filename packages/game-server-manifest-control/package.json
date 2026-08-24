@@ -1,0 +1,25 @@
+{
+  "name": "@gridora/game-server-manifest-control",
+  "version": "0.1.0",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json --noEmit",
+    "check": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --root ../.. packages/game-server-manifest-control/test"
+  },
+  "dependencies": {
+    "@gridora/audit-contracts": "workspace:*",
+    "@gridora/game-lifecycle-control": "workspace:*",
+    "@gridora/server-plan-control": "workspace:*",
+    "effect": "catalog:"
+  },
+  "devDependencies": {
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

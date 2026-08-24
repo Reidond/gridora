@@ -1,0 +1,37 @@
+{
+  "name": "@gridora/queue-consumers",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "build": "wrangler deploy --dry-run --outdir dist",
+    "check": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run --root ../.. workers/queue-consumers/test"
+  },
+  "dependencies": {
+    "@gridora/audit-contracts": "workspace:*",
+    "@gridora/audit-d1": "workspace:*",
+    "@gridora/auth-cloudflare-access": "workspace:*",
+    "@gridora/contracts": "workspace:*",
+    "@gridora/db-contracts": "workspace:*",
+    "@gridora/db-d1": "workspace:*",
+    "@gridora/domain": "workspace:*",
+    "@gridora/log-control": "workspace:*",
+    "@gridora/log-d1": "workspace:*",
+    "@gridora/log-r2": "workspace:*",
+    "@gridora/observability": "workspace:*",
+    "@gridora/orphan-schedule": "workspace:*",
+    "@gridora/policy-schedule": "workspace:*",
+    "@gridora/realtime": "workspace:*",
+    "effect": "catalog:"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:",
+    "wrangler": "catalog:"
+  }
+}

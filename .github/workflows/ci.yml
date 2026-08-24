@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        with:
+          run_install: false
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm check
+      - name: Verify generated Worker binding declarations
+        run: pnpm wrangler:types:check
+      - run: pnpm test
+      - name: Verify Cloudflare runtime boundaries
+        run: |
+          pnpm exec tsc --noEmit -p tests/cloudflare/tsconfig.json --pretty false
+          pnpm exec vitest run --config tests/cloudflare/vitest.config.ts
+      - name: Verify Docker boundaries on a real container
+        env:
+          GRIDORA_LIVE_DOCKER_SECURITY: '1'
+        run: pnpm exec vitest run tests/security/docker-boundaries.live.test.ts
+      - run: pnpm build
+      - name: Validate Worker bundles without deployment
+        run: |
+          while IFS= read -r config; do
+            pnpm wrangler deploy --dry-run --config "$config"
+          done < <(find apps workers -name wrangler.jsonc -type f -print | sort)

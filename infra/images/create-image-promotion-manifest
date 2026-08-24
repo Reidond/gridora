@@ -1,0 +1,65 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+[[ "${GRIDORA_IMAGE_VERSION:-}" =~ ^[A-Za-z0-9][A-Za-z0-9._+-]{0,63}$ ]]
+[[ "${GRIDORA_IMAGE_NAME:-}" =~ ^[A-Za-z0-9][A-Za-z0-9._+-]{0,127}$ ]]
+[[ "${GRIDORA_IMAGE_SHA256:-}" =~ ^[a-f0-9]{64}$ ]]
+[[ "${GRIDORA_SOURCE_COMMIT:-}" =~ ^[a-f0-9]{40}$ ]]
+for coordinate in \
+  "${GRIDORA_BUILD_IDENTITY_MANIFEST_SHA256:-}" \
+  "${GRIDORA_BUILD_IDENTITY_SIGNATURE_SHA256:-}" \
+  "${GRIDORA_BUILD_IDENTITY_PUBLIC_KEY_SHA256:-}" \
+  "${GRIDORA_ROOTFS_ARCHIVE_SHA256:-}" \
+  "${GRIDORA_ROOTFS_EVIDENCE_SHA256:-}" \
+  "${GRIDORA_SBOM_SHA256:-}"; do
+  [[ "${coordinate}" =~ ^sha256:[a-f0-9]{64}$ ]]
+done
+
+jq -n \
+  --arg version "${GRIDORA_IMAGE_VERSION}" \
+  --arg name "${GRIDORA_IMAGE_NAME}" \
+  --arg sha256 "${GRIDORA_IMAGE_SHA256}" \
+  --arg sourceCommit "${GRIDORA_SOURCE_COMMIT}" \
+  --arg buildIdentityManifestSha256 "${GRIDORA_BUILD_IDENTITY_MANIFEST_SHA256}" \
+  --arg buildIdentitySignatureSha256 "${GRIDORA_BUILD_IDENTITY_SIGNATURE_SHA256}" \
+  --arg buildIdentityPublicKeySha256 "${GRIDORA_BUILD_IDENTITY_PUBLIC_KEY_SHA256}" \
+  --arg rootfsArchiveSha256 "${GRIDORA_ROOTFS_ARCHIVE_SHA256}" \
+  --arg rootfsEvidenceSha256 "${GRIDORA_ROOTFS_EVIDENCE_SHA256}" \
+  --arg sbomSha256 "${GRIDORA_SBOM_SHA256}" '
+  {
+    schemaVersion: 1,
+    state: "testing",
+    sourceCommit: $sourceCommit,
+    image: {
+      name: $name,
+      version: $version,
+      architecture: "amd64",
+      format: "qcow2",
+      sha256: $sha256
+    },
+    signature: {
+      schemaVersion: 1,
+      algorithm: "ed25519",
+      buildIdentityManifestSha256: $buildIdentityManifestSha256,
+      buildIdentitySignatureSha256: $buildIdentitySignatureSha256,
+      buildIdentityPublicKeySha256: $buildIdentityPublicKeySha256
+    },
+    evidence: {
+      sbom: ($name + ".spdx.json"),
+      rootfsArchive: ($name + ".rootfs.tar"),
+      rootfsEvidence: ($name + ".rootfs-evidence.json"),
+      signature: ($name + ".sigstore.json"),
+      inputs: ($name + ".inputs.json"),
+      buildIdentityManifest: ($name + ".identity.json"),
+      buildIdentitySignature: ($name + ".identity.sig"),
+      buildIdentityPublicKey: ($name + ".identity-public.pem"),
+      buildLog: ($name + ".build.log"),
+      imageTestLog: ($name + ".image-test.log"),
+      scanLog: ($name + ".scan.log"),
+      integrity: {
+        rootfsArchiveSha256: $rootfsArchiveSha256,
+        rootfsEvidenceSha256: $rootfsEvidenceSha256,
+        sbomSha256: $sbomSha256
+      }
+    }
+  }'

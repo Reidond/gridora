@@ -1,0 +1,25 @@
+[Unit]
+Description=Gridora Traefik proxy
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=gridora-traefik
+Group=gridora-traefik
+ExecStart=/usr/local/bin/traefik --configFile=/etc/traefik/traefik.yaml
+Restart=on-failure
+RestartSec=5s
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+
+[Install]
+WantedBy=multi-user.target

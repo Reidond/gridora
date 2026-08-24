@@ -1,0 +1,39 @@
+{
+  "name": "@gridora/generated-client",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "build": "tsdown src/index.ts --format esm --dts",
+    "check": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run --root ../.. packages/generated-client/test"
+  },
+  "dependencies": {
+    "@gridora/backup-control": "workspace:*",
+    "@gridora/contracts": "workspace:*",
+    "@gridora/domain": "workspace:*",
+    "@gridora/game-desired-state-control": "workspace:*",
+    "@gridora/game-lifecycle-control": "workspace:*",
+    "@gridora/game-server-manifest-control": "workspace:*",
+    "@gridora/health-control": "workspace:*",
+    "@gridora/http-hono-effect": "workspace:*",
+    "@gridora/inventory-contracts": "workspace:*",
+    "@gridora/lifecycle-termination-control": "workspace:*",
+    "@gridora/log-control": "workspace:*",
+    "@gridora/node-provision-control": "workspace:*",
+    "@gridora/node-runtime-lifecycle-control": "workspace:*",
+    "@gridora/platform-provider-control": "workspace:*",
+    "@gridora/policy-control": "workspace:*",
+    "@gridora/provider-account-control": "workspace:*",
+    "@gridora/server-plan-control": "workspace:*",
+    "effect": "catalog:"
+  },
+  "devDependencies": {
+    "tsdown": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# This root-owned, immutable launcher is intentionally the only executable
+# systemd invokes for the mutable agent release. It accepts no path, URL, shell
+# fragment, or arbitrary argument vector from a caller.
+root=/var/lib/gridora/agent-updates
+current=${root}/current
+
+fail() {
+  printf 'gridora-agent-current: %s\n' "$1" >&2
+  exit 126
+}
+
+[[ -L "${current}" ]] || fail 'current release link is unavailable'
+target=$(readlink -- "${current}")
+[[ "${target}" =~ ^releases/[a-f0-9]{64}$ ]] || fail 'current release target is invalid'
+binary="${root}/${target}/gridora-agent"
+[[ -f "${binary}" && ! -L "${binary}" && -x "${binary}" ]] || fail 'current release binary is invalid'
+
+case "$#:${1:-}:${2:-}:${3:-}" in
+  3:serve:--config:/etc/gridora/agent.json)
+    ;;
+  3:agent-update-helper:--listen-fd:3)
+    ;;
+  2:agent-update-helper:--setup:)
+    ;;
+  *)
+    fail 'unsupported fixed invocation'
+    ;;
+esac
+
+exec "${binary}" "$@"

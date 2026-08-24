@@ -1,0 +1,26 @@
+{
+  "name": "@gridora/platform-provider-control",
+  "version": "0.1.0",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json --noEmit",
+    "check": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --root ../.. packages/platform-provider-control/test"
+  },
+  "dependencies": {
+    "@gridora/platform-authority": "workspace:*",
+    "@gridora/platform-secret-envelope": "workspace:*",
+    "@gridora/provider-account-control": "workspace:*",
+    "@gridora/provider-sdk": "workspace:*",
+    "effect": "catalog:"
+  },
+  "devDependencies": {
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

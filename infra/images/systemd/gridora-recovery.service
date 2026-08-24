@@ -1,0 +1,15 @@
+[Unit]
+Description=Gridora boot recovery checks
+After=docker.service nftables.service
+Before=gridora-agent.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/libexec/gridora/recovery-check
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

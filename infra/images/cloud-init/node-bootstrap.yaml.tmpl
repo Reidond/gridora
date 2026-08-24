@@ -1,0 +1,21 @@
+#cloud-config
+# Render this file once. Provider APIs must treat user-data as sensitive.
+# The registration token is short-lived and single-use. Only the root bootstrap
+# helper may split this strict reservation into the unprivileged agent files.
+#
+# Do not put a Cloudflare Tunnel token in user-data. A trusted credential
+# delivery channel must atomically install a root-owned 0600 credential at
+# /var/lib/gridora/tunnel/credential after the agent registers. The cloudflared
+# service fails closed while that file is absent.
+write_files:
+  - path: /var/lib/gridora/bootstrap/reservation.json
+    owner: root:root
+    permissions: "0600"
+    encoding: b64
+    content: ${bootstrap_reservation_json_base64}
+runcmd:
+  - [systemctl, daemon-reload]
+  - [systemctl, restart, nftables]
+# The image enables the bootstrap, agent, and post-agent cleanup units. Their
+# ordering avoids a systemd/cloud-init cycle and erases copies after handoff.
+final_message: "Gridora node bootstrap initiated"

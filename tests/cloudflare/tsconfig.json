@@ -1,0 +1,15 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "declaration": false,
+    "declarationMap": false,
+    "types": ["@cloudflare/vitest-pool-workers/types", "@types/node"]
+  },
+  "include": [
+    "./**/*.ts",
+    "../../apps/api/worker-configuration.d.ts",
+    "../../packages/backup-r2/src/**/*.ts",
+    "../../packages/backup-key/src/**/*.ts",
+    "../../packages/backup-key-d1/src/**/*.ts"
+  ]
+}

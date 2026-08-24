@@ -1,0 +1,129 @@
+name: Security
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    - cron: '17 3 * * 1'
+
+permissions:
+  contents: read
+
+jobs:
+  cloudflare-config:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        with:
+          run_install: false
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Build the Cloudflare web artifact
+        run: pnpm --filter @gridora/web build
+      - name: Verify generated Worker binding declarations
+        run: pnpm wrangler:types:check
+      - name: Render and validate the non-secret staging binding contract
+        run: |
+          set -euo pipefail
+          render_dir="$(mktemp -d)"
+          trap 'rm -rf "$render_dir"' EXIT
+          node infra/scripts/render-cloudflare-environment.mjs \
+            --environment-file infra/cloudflare/environment.ci.json \
+            --out-dir "$render_dir"
+          while IFS= read -r config; do
+            pnpm exec wrangler deploy --dry-run --config "$config"
+          done < <(
+            find "$render_dir" -type f \( -name wrangler.jsonc -o -name wrangler.template.jsonc \) -print | sort
+          )
+      - name: Validate the non-provisioning Terraform plan
+        run: |
+          terraform_image='hashicorp/terraform@sha256:6bbb82d575aa7bd4f0a2c6e3a0838ab9590426c08a71d7a2783643f01004d356'
+          terraform_dir=/workspace/infra/cloudflare/terraform
+          docker run --rm --entrypoint /bin/sh -v "$PWD:/workspace" "$terraform_image" \
+            -c 'sh /workspace/infra/scripts/terraform-init.sh offline'
+          docker run --rm -v "$PWD:/workspace" -w "$terraform_dir" "$terraform_image" fmt -check -recursive
+          docker run --rm -v "$PWD:/workspace" -w "$terraform_dir" "$terraform_image" validate
+          mkdir -p .gridora
+          docker run --rm --entrypoint /bin/sh -v "$PWD:/workspace" -w "$terraform_dir" "$terraform_image" -c '
+            terraform plan -input=false -lock=false -var-file=staging.tfvars.example \
+              -out=/tmp/gridora.tfplan && \
+            terraform show -json /tmp/gridora.tfplan > /workspace/.gridora/terraform-default-plan.json'
+          node infra/scripts/assert-terraform-no-resource-changes.mjs \
+            .gridora/terraform-default-plan.json
+      - name: Reject production hostnames from the staging Terraform contract
+        run: |
+          terraform_image='hashicorp/terraform@sha256:6bbb82d575aa7bd4f0a2c6e3a0838ab9590426c08a71d7a2783643f01004d356'
+          terraform_dir=/workspace/infra/cloudflare/terraform
+          docker run --rm --entrypoint /bin/sh -v "$PWD:/workspace" -w "$terraform_dir" "$terraform_image" -c '
+            set -eu
+            for override in \
+              "api_hostname=api.gridora.example" \
+              "public_app_hostname=app.gridora.example" \
+              "console_hostname=console.gridora.example" \
+              "dns_target_hostname=nodes.gridora.example"
+            do
+              if terraform plan -input=false -lock=false -var-file=staging.tfvars.example \
+                -var="$override" >/tmp/gridora-invalid-hostname-plan.log 2>&1
+              then
+                cat /tmp/gridora-invalid-hostname-plan.log >&2
+                printf "Terraform accepted cross-environment hostname %s.\\n" "$override" >&2
+                exit 1
+              fi
+            done
+          '
+
+  dependency-and-secret-scan:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          fetch-depth: 0
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        with:
+          run_install: false
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm audit --audit-level high
+      - name: Verify real Docker workload boundaries
+        env:
+          GRIDORA_LIVE_DOCKER_SECURITY: '1'
+        run: pnpm exec vitest run tests/security/docker-boundaries.live.test.ts
+      - name: Scan repository and configuration
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          format: sarif
+          output: trivy.sarif
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: '1'
+      - name: Upload SARIF
+        if: always() && hashFiles('trivy.sarif') != ''
+        uses: github/codeql-action/upload-sarif@db488ddef3bf6cb639b32c2e9a7c0a7ea8271d28 # v4
+        with:
+          sarif_file: trivy.sarif
+
+  dependency-review:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/dependency-review-action@2031cfc080254a8a887f58cffee85186f0e49e48 # v4
+        with:
+          fail-on-severity: high

@@ -1,0 +1,24 @@
+[Unit]
+Description=Prepare and mount the Gridora project quota filesystem
+After=local-fs.target
+Before=docker.service gridora-quota.socket gridora-quota.service gridora-agent.service
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+ExecStart=/usr/local/bin/gridora-agent quota-filesystem-setup
+ExecStop=/usr/bin/umount /var/lib/gridora/servers
+RemainAfterExit=true
+NoNewPrivileges=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+RestrictNamespaces=true
+LockPersonality=true
+SystemCallArchitectures=native
+RestrictAddressFamilies=AF_UNIX
+CapabilityBoundingSet=CAP_SYS_ADMIN CAP_CHOWN CAP_DAC_OVERRIDE CAP_FOWNER
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

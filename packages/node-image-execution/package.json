@@ -1,0 +1,25 @@
+{
+  "name": "@gridora/node-image-execution",
+  "version": "0.1.0",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json --noEmit",
+    "check": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --root ../.. packages/node-image-execution/test"
+  },
+  "dependencies": {
+    "@gridora/node-image-d1": "workspace:*",
+    "@gridora/provider-image-registration": "workspace:*",
+    "@gridora/provider-sdk": "workspace:*",
+    "effect": "catalog:"
+  },
+  "devDependencies": {
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

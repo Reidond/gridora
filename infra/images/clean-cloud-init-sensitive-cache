@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# GRIDORA_TEST_ROOT is for the isolated behavior test only. Production runs
+# with an empty prefix and never receives secret values as command arguments.
+root=${GRIDORA_TEST_ROOT:-}
+cloud_state="${root}/var/lib/cloud"
+runtime_state="${root}/run/cloud-init"
+cloud_config="${root}/etc/cloud"
+log_state="${root}/var/log"
+
+remove_sensitive_file() {
+  local path=$1
+  if [[ -f "${path}" && ! -L "${path}" ]]; then
+    chmod u+w "${path}" 2>/dev/null || true
+    shred --force --remove=unlink --zero "${path}"
+  fi
+}
+
+if [[ -d "${cloud_state}" ]]; then
+  while IFS= read -r -d '' path; do
+    remove_sensitive_file "${path}"
+  done < <(
+    find -P "${cloud_state}" -xdev -type f \
+      \( -name 'user-data.txt' -o -name 'user-data.txt.i' \
+      -o -name 'vendor-data.txt' -o -name 'vendor-data.txt.i' \
+      -o -name 'vendor-data2.txt' -o -name 'vendor-data2.txt.i' \
+      -o -name 'obj.pkl' \) -print0
+  )
+fi
+
+remove_sensitive_file "${runtime_state}/instance-data-sensitive.json"
+remove_sensitive_file "${log_state}/cloud-init.log"
+remove_sensitive_file "${log_state}/cloud-init-output.log"
+
+# Do not let a later reboot fetch the same provider user-data into a fresh
+# cache. The node image is immutable after its one-time bootstrap.
+install -d -m 0755 "${cloud_config}"
+install -m 0644 /dev/null "${cloud_config}/cloud-init.disabled"
