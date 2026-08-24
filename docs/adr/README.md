@@ -124,3 +124,5 @@ Rejected.
   runner before it loads the quota format module.
 - ADR 0092 boots the pinned Ubuntu autoinstall through explicit GRUB kernel and
   initrd commands instead of depending on mutable menu-editor line positions.
+- ADR 0093 creates the private guest directory required by Packer's
+  content-only asset upload before the SCP provisioner runs.

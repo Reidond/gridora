@@ -163,4 +163,12 @@ describe('node image assets', () => {
     expect(packer).toContain('boot<enter>')
     expect(packer).not.toContain('<down><down><down><end>')
   })
+
+  it('creates the private image-asset upload destination before copying its contents', () => {
+    const packer = asset('infra/packer/gridora-node.pkr.hcl')
+    const createDestination = 'install -d -m 0700 /tmp/gridora-image'
+    const uploadDestination = 'destination = "/tmp/gridora-image"'
+    expect(packer).toContain(createDestination)
+    expect(packer.indexOf(createDestination)).toBeLessThan(packer.indexOf(uploadDestination))
+  })
 })
