@@ -3820,3 +3820,32 @@ directory /lib/modules/6.17.0-1022-azure`. Step 116 installs the matching
   not tag or release until the replacement run completes the image and smoke
   lanes.
 - Decision: ADR 0097.
+
+## Step 123: Preflight the read-only libguestfs appliance
+
+- Status: local
+- Situation: Owner-approved exact-main run 32766678178 completed the Ubuntu
+  QCOW2 build and passed `qemu-img` validation, then failed before rootfs
+  extraction because the hosted runner's unprivileged libguestfs process could
+  not build its supermin appliance from the unreadable host kernel image.
+- Task: Fail early when the ephemeral signing runner cannot inspect the image,
+  while preserving mandatory read-only rootfs evidence and signing controls.
+- Action: Select the direct libguestfs backend, make only the running ephemeral
+  host kernel image readable after package installation, assert that access,
+  and run `libguestfs-test-tool` before Packer starts.
+- Result: The protected job proves its extraction appliance before spending
+  time building the QCOW2. The produced guest remains unchanged, and extraction,
+  SBOM generation, scanning, signing, verification, and upload remain
+  fail-closed.
+- Evidence: `.github/workflows/image.yml`,
+  `tests/image/image-assets.test.ts`, failed protected run 32766678178, and ADR 0098.
+- Verification: Require workflow parsing, ShellCheck, focused image and
+  documentation tests, Packer 1.14.2 formatting and validation with QEMU plugin
+  1.1.6, the complete repository gate, pull-request CI and Security, then a new
+  owner-approved exact-main build and separately approved simulated provider
+  smoke. The focused records pass 22 tests. The complete local gate reports 903
+  correctly formatted files, zero lint or type errors across 522 files, 226
+  passing test files with 1,501 passing tests, and 112 successful builds.
+- Blocker: Run 32766678178 produced no accepted artifact. Do not tag or release
+  until the replacement run completes the evidence and smoke lanes.
+- Decision: ADR 0098.

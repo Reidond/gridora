@@ -231,6 +231,8 @@ jobs:
     permissions:
       contents: read
       id-token: write
+    env:
+      LIBGUESTFS_BACKEND: direct
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
       - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
@@ -255,6 +257,10 @@ jobs:
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
             libguestfs-tools qemu-system-x86 qemu-utils quota \
             "linux-modules-extra-$(uname -r)"
+          kernel_image="/boot/vmlinuz-$(uname -r)"
+          sudo chmod 0644 "$kernel_image"
+          test -r "$kernel_image"
+          libguestfs-test-tool
       - name: Prove privileged node kernel boundaries on the KVM runner
         run: |
           docker build \

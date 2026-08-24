@@ -37,6 +37,13 @@ describe('node image assets', () => {
     expect(workflow.match(/test -d \/sys\/module\/quota_v2/g)).toHaveLength(2)
     expect(workflow.match(/linux-modules-extra-\$\(uname -r\)/g)).toHaveLength(2)
     expect(workflow).toContain('libguestfs-tools qemu-system-x86 qemu-utils quota')
+    expect(workflow).toContain('LIBGUESTFS_BACKEND: direct')
+    expect(workflow).toContain('kernel_image="/boot/vmlinuz-$(uname -r)"')
+    expect(workflow).toContain('sudo chmod 0644 "$kernel_image"')
+    expect(workflow).toContain('test -r "$kernel_image"')
+    expect(workflow.indexOf('libguestfs-test-tool')).toBeLessThan(
+      workflow.indexOf('- name: Build the local QCOW2 image'),
+    )
     expect(workflow).not.toMatch(
       /gridora-node-validation:ci \\\n\s+\/workspace\/infra\/scripts\/validate-project-quota\.sh/,
     )
