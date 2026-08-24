@@ -3477,7 +3477,145 @@ remained reachable.` The probe connected directly between two containers on
   complete `pnpm run ci` gate reports 892 correctly formatted files, zero lint
   or type errors across 522 files, 226 passing test files with 1,494 passing
   tests, and 112 successful builds.
-- Blocker: Publish the correction through a protected pull request, rerun the
-  exact main image workflow, approve signing and simulated smoke, and complete
-  the protected release.
+- Blocker: Pull request 8 merged as `765bb3a`. The corrected firewall proof
+  passed in protected run 32741854152, then the separate project-quota proof
+  failed because the hosted privileged container could not discover an implicit
+  loop device. Step 113 makes that allocation explicit and moves both kernel
+  proofs before merge. The image, smoke, tag, and release remain.
 - Decision: ADR 0087.
+
+## Step 113: Allocate quota loop devices explicitly before protected signing
+
+- Status: local
+- Situation: Protected run 32741854152 proved the corrected leased and unleased
+  firewall paths, then failed at `mount -o loop` with `mount(2) system call
+failed: No such process.` GitHub's hosted privileged container did not expose
+  reliable implicit loop-device discovery. The same non-secret kernel proof was
+  unnecessarily delayed until after merge and image-signing approval.
+- Task: Make the ext4 project-quota proof independent of container udev device
+  population and run both privileged kernel proofs as required pull-request
+  evidence before any signing environment is entered.
+- Action: In the disposable privileged container, create the standard loop
+  control character node and loop block-device nodes only when absent. Attach
+  the preallocated ext4 image with explicit `losetup --find --show`. Mount the
+  returned device with `prjquota`. Always unmount and detach that exact device.
+- Action: Run the pinned validation image's firewall and project-quota scripts
+  in the public `validate` job for pull requests, main pushes, and dispatches.
+  Repeat the same proof in the owner-approved artifact build. Do not pass
+  secrets, a host Docker socket, or a game container into either proof.
+- Result: Missing loop nodes cannot masquerade as a quota failure. Native Linux
+  firewall and quota capabilities must pass before a correction can merge, and
+  the protected build repeats them before it reads signing inputs.
+- Evidence: `infra/scripts/validate-project-quota.sh`,
+  `.github/workflows/image.yml`, `tests/image/image-assets.test.ts`, protected
+  run 32741854152, and ADR 0088.
+- Verification: Bash syntax and ShellCheck pass. The pinned privileged
+  validation container creates, mounts, enforces, unmounts, and detaches the
+  explicit loop-backed ext4 project-quota filesystem locally. A four-megabyte
+  unprivileged write is rejected at the one-megabyte hard limit with `Disk quota
+exceeded`. The image asset test requires explicit loop setup, both executable
+  workflow proofs, and both static script checks. The complete `pnpm run ci`
+  gate reports 893 correctly formatted files, zero lint or type errors across
+  522 files, 226 passing test files with 1,495 passing tests, and 112 successful
+  builds.
+- Blocker: Pull request 9 run 32742770930 attached an explicit loop device but
+  the hosted kernel still rejected the nested-container mount with `mount(2)
+system call failed: No such process.` Step 114 moves only this quota proof to
+  the ephemeral host's private mount namespace. The image, smoke, tag, and
+  release remain.
+- Decision: ADR 0088.
+
+## Step 114: Prove project quotas in a private host mount namespace
+
+- Status: local
+- Situation: Pull request 9 proved that a GitHub-hosted privileged container
+  can allocate an explicit loop device yet still cannot mount it. The firewall
+  integration proof passed in the same job. Repeating device-node changes
+  cannot correct a mount boundary imposed by the host kernel.
+- Task: Exercise ext4 project-quota enforcement on the ephemeral Ubuntu host
+  without leaking mounts, loop devices, files, or elevated state into later
+  workflow steps.
+- Action: Install Ubuntu's `quota` userspace tools on the ephemeral runner. Run
+  the quota script as root through `unshare --mount --propagation private` so
+  the loop-backed mount exists only in a private mount namespace. Keep the
+  Docker and nftables firewall proof in the pinned privileged validation image.
+- Action: Allocate the filesystem image and mount directory below one
+  `mktemp -d` root. On every exit, unmount, detach the exact loop device, remove
+  only device nodes created by the proof, and delete the validated temporary
+  root. Repeat the same host-isolated quota proof before the approved image
+  build.
+- Result: Pull requests must prove the real hosted Linux quota boundary before
+  merge. The protected build repeats it on its own runner, while neither proof
+  changes the host mount namespace or uses a repository secret, Docker socket,
+  game container, provider resource, or production system.
+- Evidence: `infra/scripts/validate-project-quota.sh`,
+  `.github/workflows/image.yml`, `tests/image/image-assets.test.ts`, failed pull
+  request run 32742770930, and ADR 0089.
+- Verification: Bash syntax, ShellCheck, the image-asset contract test, local
+  Docker quota enforcement, and the complete repository gate must pass. Pull
+  request 9 must then pass the native Ubuntu `validate` job before merge.
+- Blocker: Pull request 9 run 32743694394 reached the host mount boundary but
+  returned the same `ESRCH` because Ubuntu's version-2 quota format module was
+  not loaded. Step 115 loads and verifies that module before the proof. The
+  image, smoke, tag, and release remain.
+- Decision: ADR 0089.
+
+## Step 115: Load the hosted kernel's quota format before mounting
+
+- Status: local
+- Situation: Pull request 9 run 32743694394 moved the proof onto the Ubuntu host
+  and attached its loop device, but ext4 again returned `No such process` while
+  mounting the quota-enabled filesystem. Linux returns `ESRCH` when a filesystem
+  enables version-2 quota metadata before the `quota_v2` format module is loaded.
+  Local Docker succeeded because its Linux host had already loaded that module.
+- Task: Make the hosted kernel's quota-format dependency explicit and keep the
+  filesystem mount plus hard-limit rejection as the authoritative proof.
+- Action: Before each private mount-namespace proof, run `modprobe quota_v2` as
+  root and require `/sys/module/quota_v2` to exist. Do this in both public pull-
+  request validation and the owner-approved protected image build.
+- Result: A missing kernel quota module fails with a precise dependency error.
+  A present module is not sufficient by itself: the workflow must still create
+  and mount the ext4 filesystem, read back the exact project limit, and observe
+  the oversized unprivileged write fail.
+- Evidence: `.github/workflows/image.yml`,
+  `tests/image/image-assets.test.ts`, failed pull-request run 32743694394, Linux
+  quota format-module behavior, and ADR 0090.
+- Verification: The image-asset test requires two explicit module loads, two
+  sysfs assertions, and two private host quota proofs. The focused tests and
+  complete repository gate must pass, then pull request 9 must prove the path
+  on GitHub's Ubuntu 24.04 runner before merge.
+- Blocker: Pull request 9 run 32744210002 reported `Module quota_v2 not found in
+directory /lib/modules/6.17.0-1022-azure`. Step 116 installs the matching
+  Ubuntu extra-module package before the explicit load. The image, smoke, tag,
+  and release remain.
+- Decision: ADR 0090.
+
+## Step 116: Install the runner kernel's matching quota module package
+
+- Status: local
+- Situation: Pull request 9 run 32744210002 proved that the Ubuntu runner's base
+  module set does not include `quota_v2` for its exact Azure kernel. The explicit
+  load failed before any filesystem mount, which replaced the ambiguous `ESRCH`
+  with the real missing-package boundary.
+- Task: Supply the stock Ubuntu quota format module that matches the running
+  ephemeral kernel without pinning a stale kernel release or bypassing the
+  behavioral quota proof.
+- Action: After `apt-get update`, install `linux-modules-extra-$(uname -r)` with
+  `--no-install-recommends` alongside the `quota` userspace package. Use the same
+  exact-running-kernel expression in public validation and the protected image
+  build. Then require `modprobe quota_v2` and its sysfs entry before mounting.
+- Result: The proof follows GitHub's current Ubuntu Azure kernel instead of
+  assuming its optional modules are preinstalled. Package installation affects
+  only the ephemeral runner, is credential-free, and still cannot pass without
+  the exact project-ID, hard-limit readback, and rejected oversized write.
+- Evidence: `.github/workflows/image.yml`,
+  `tests/image/image-assets.test.ts`, failed pull-request run 32744210002, and
+  ADR 0091.
+- Verification: The image-asset test requires two matching-kernel package
+  installations, two module loads, two sysfs assertions, and two private quota
+  executions. Focused tests and the complete repository gate must pass, then
+  pull request 9 must prove quota enforcement on GitHub's Ubuntu runner.
+- Blocker: Merge only after the native proof is green, rerun the exact main image
+  workflow, approve signing and simulated smoke, then complete the protected
+  semantic release.
+- Decision: ADR 0091.

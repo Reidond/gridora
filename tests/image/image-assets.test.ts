@@ -20,6 +20,28 @@ describe('node image assets', () => {
     expect(integration).not.toContain('http://${allowed_ip}:2302')
   })
 
+  it('runs the project-quota proof on the host in a private mount namespace', () => {
+    const quota = asset('infra/scripts/validate-project-quota.sh')
+    const workflow = asset('.github/workflows/image.yml')
+    expect(quota).toContain('mknod -m 0600 /dev/loop-control c 10 237')
+    expect(quota).toContain('mknod -m 0600 "/dev/loop${index}" b 7 "$index"')
+    expect(quota).toContain('losetup --find --show "$image"')
+    expect(quota).toContain('losetup --detach "$loop_device"')
+    expect(quota).toContain('mktemp -d "${TMPDIR:-/tmp}/gridora-project-quota.XXXXXX"')
+    expect(quota).toContain('rm -rf -- "$proof_root"')
+    expect(quota).not.toContain('mount -o loop,')
+    expect(workflow.match(/validate-project-quota\.sh/g)).toHaveLength(4)
+    expect(workflow.match(/sudo unshare --mount --propagation private/g)).toHaveLength(2)
+    expect(workflow.match(/sudo modprobe quota_v2/g)).toHaveLength(2)
+    expect(workflow.match(/test -d \/sys\/module\/quota_v2/g)).toHaveLength(2)
+    expect(workflow.match(/linux-modules-extra-\$\(uname -r\)/g)).toHaveLength(2)
+    expect(workflow).toContain('libguestfs-tools qemu-system-x86 qemu-utils quota')
+    expect(workflow).not.toMatch(
+      /gridora-node-validation:ci \\\n\s+\/workspace\/infra\/scripts\/validate-project-quota\.sh/,
+    )
+    expect(workflow).toContain('Prove privileged node kernel boundaries on the hosted runner')
+  })
+
   it('hardens the agent systemd unit', () => {
     const unit = asset('infra/images/systemd/gridora-agent.service')
     expect(unit).toContain('NoNewPrivileges=true')

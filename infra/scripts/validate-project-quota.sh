@@ -6,18 +6,48 @@ if [[ "$(id -u)" -ne 0 ]]; then
   exit 1
 fi
 
-readonly image=/gridora-servers.ext4
-readonly mountpoint=/servers
+proof_root="$(mktemp -d "${TMPDIR:-/tmp}/gridora-project-quota.XXXXXX")"
+readonly proof_root
+readonly image="$proof_root/gridora-servers.ext4"
+readonly mountpoint="$proof_root/servers"
+loop_device=''
+created_loop_control=false
+created_loop_nodes=()
 
 cleanup() {
+  set +e
   mountpoint -q "$mountpoint" && umount "$mountpoint"
+  [[ -z "$loop_device" ]] || losetup --detach "$loop_device"
+  for node in "${created_loop_nodes[@]}"; do
+    rm -f -- "$node"
+  done
+  if [[ "$created_loop_control" = true ]]; then
+    rm -f -- /dev/loop-control
+  fi
+  rm -rf -- "$proof_root"
 }
 trap cleanup EXIT
 
+chmod 0711 "$proof_root"
 fallocate --length 268435456 "$image"
 mkfs.ext4 -q -F -O quota,project -E nodiscard,quotatype=prjquota "$image"
 mkdir "$mountpoint"
-mount -o loop,nodev,nosuid,prjquota "$image" "$mountpoint"
+# A disposable runner or local validation container may not expose loop device
+# nodes. Create only the standard loop-control and block-device nodes, then bind
+# the image explicitly so mount never relies on implicit libmount/udev discovery.
+if [[ ! -e /dev/loop-control ]]; then
+  mknod -m 0600 /dev/loop-control c 10 237
+  created_loop_control=true
+fi
+for index in {0..63}; do
+  if [[ ! -e "/dev/loop${index}" ]]; then
+    mknod -m 0600 "/dev/loop${index}" b 7 "$index"
+    created_loop_nodes+=("/dev/loop${index}")
+  fi
+done
+loop_device="$(losetup --find --show "$image")"
+readonly loop_device
+mount -o nodev,nosuid,prjquota "$loop_device" "$mountpoint"
 mkdir "$mountpoint/server-1"
 chown 10001:10001 "$mountpoint/server-1"
 chattr -R -p 1000000000 "$mountpoint/server-1"

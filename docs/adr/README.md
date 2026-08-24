@@ -114,3 +114,11 @@ Rejected.
   automated release gates, and ephemeral release evidence.
 - ADR 0087 defines the Linux KVM firewall proof at the Docker host-DNAT boundary
   instead of same-bridge layer-2 traffic.
+- ADR 0088 moved non-secret kernel proofs into required pull-request validation;
+  ADR 0089 supersedes its quota-container execution boundary.
+- ADR 0089 runs the project-quota proof on the ephemeral Ubuntu host inside a
+  private mount namespace while retaining the containerized firewall proof.
+- ADR 0090 explicitly loads and verifies the hosted kernel's version-2 quota
+  format module before the private project-quota proof.
+- ADR 0091 installs the matching Ubuntu extra-module package on the disposable
+  runner before it loads the quota format module.
