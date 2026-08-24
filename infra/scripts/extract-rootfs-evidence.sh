@@ -33,15 +33,28 @@ else
   exit 1
 fi
 status_path_count=$(awk '$0 ~ "(^|/)var/lib/dpkg/status$" { count += 1 } END { print count + 0 }' "${archive_listing}")
-[[ "${status_path_count}" == 1 ]]
+if [[ "${status_path_count}" != 1 ]]; then
+  printf 'rootfs archive must contain exactly one dpkg status file; found %s\n' \
+    "${status_path_count}" >&2
+  exit 1
+fi
 status_path=$(awk '$0 ~ "(^|/)var/lib/dpkg/status$" { print; exit }' "${archive_listing}")
-[[ -n "${status_path}" ]]
+if [[ -z "${status_path}" ]]; then
+  echo 'rootfs dpkg status path is empty' >&2
+  exit 1
+fi
 # Stream only the package database. Extracting an otherwise valid guest rootfs
 # as an unprivileged runner would try to recreate device nodes such as /dev/null.
 "${tar_command}" --extract --to-stdout --file "${rootfs_archive}" -- "${status_path}" >"${status_file}"
-[[ -s "${status_file}" ]]
+if [[ ! -s "${status_file}" ]]; then
+  echo 'rootfs dpkg status file is empty' >&2
+  exit 1
+fi
 package_count=$(awk '/^Package: / { count += 1 } END { print count + 0 }' "${status_file}")
-[[ "${package_count}" =~ ^[1-9][0-9]*$ ]]
+if [[ ! "${package_count}" =~ ^[1-9][0-9]*$ ]]; then
+  printf 'rootfs dpkg status contains no package records\n' >&2
+  exit 1
+fi
 
 artifact_sha=$(sha256sum "${artifact}" | cut -d ' ' -f 1)
 rootfs_sha=$(sha256sum "${rootfs_archive}" | cut -d ' ' -f 1)

@@ -490,19 +490,25 @@ jobs:
           set -o pipefail
           qemu-img check "$IMAGE_PATH" | tee "$IMAGE_PATH.image-test.log"
           qemu-img info --output=json "$IMAGE_PATH" | jq -e '.format == "qcow2"' >> "$IMAGE_PATH.image-test.log"
-      - name: Create and scan supply-chain evidence
+      - name: Extract rootfs evidence
         run: |
           infra/scripts/extract-rootfs-evidence.sh \
             "$IMAGE_PATH" \
             "$IMAGE_PATH.rootfs.tar" \
             "$IMAGE_PATH.rootfs-evidence.json"
           sha256sum "$IMAGE_PATH" "$IMAGE_PATH.rootfs.tar" > "$IMAGE_PATH.sha256"
+      - name: Generate rootfs SBOM
+        run: |
           infra/scripts/generate-sbom.sh \
             "$IMAGE_PATH.rootfs.tar" \
             "$IMAGE_PATH.spdx.json" \
             "$IMAGE_PATH.rootfs-evidence.json"
+      - name: Scan rootfs archive
+        run: |
           set -o pipefail
           infra/scripts/scan-artifact.sh "$IMAGE_PATH.rootfs.tar" | tee "$IMAGE_PATH.scan.log"
+      - name: Sign and verify the QCOW2 artifact
+        run: |
           infra/scripts/sign-artifact.sh "$IMAGE_PATH"
           infra/scripts/verify-artifact.sh \
             "$IMAGE_PATH" \
@@ -510,6 +516,8 @@ jobs:
             "$IMAGE_PATH.spdx.json" \
             "$IMAGE_PATH.rootfs.tar" \
             "$IMAGE_PATH.rootfs-evidence.json"
+      - name: Create the image promotion manifest
+        run: |
           cp "$RUNNER_TEMP/identity.json" "$IMAGE_PATH.identity.json"
           cp "$RUNNER_TEMP/identity.sig" "$IMAGE_PATH.identity.sig"
           cp "$RUNNER_TEMP/identity-public.pem" "$IMAGE_PATH.identity-public.pem"
