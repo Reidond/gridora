@@ -3277,17 +3277,23 @@ COMMERCIAL_REVIEW_REQUIRED` public envelope. Workflow check and 29 tests,
   run the firewall and quota validation containers as UID/GID 0 without APT
   mutations on the protected self-hosted KVM image-builder. Do not claim those
   kernel capabilities from the hosted push runner. Create the four workflow
-  environments with a required reviewer and no credentials.
+  environments with a required reviewer and no credentials. Run the Node image
+  validation on every pull request before making its successful `validate`
+  context mandatory.
 - Result: The exact Wrangler binding check, Linux Terraform initialization and
-  validation, and Ubuntu cloud-init/systemd verification pass locally. The
+  validation, and Ubuntu cloud-init/systemd verification pass locally and on
+  GitHub. CI, Security, and Node image are green on the same public commit. The
   environment review boundary exists without triggering a deployment.
 - Evidence: `.github/workflows/ci.yml`, `.github/workflows/image.yml`, the
-  Terraform dependency lock, public GitHub runs 32718878591, 32718878578, and
-  32718878568, and the four repository environments.
+  Terraform dependency lock, initial failure runs 32718878591, 32718878578, and
+  32718878568, successful runs 32721570059, 32721570106, and 32721570062, and
+  the four repository environments.
 - Verification: Local reproduction uses Wrangler 4.125.0, the pinned Terraform
-  image digest, and the pinned Ubuntu image digest. A follow-up public Actions
-  run and API-read branch/tag protection proof remain required before this step
-  can be marked published.
+  image digest, and the pinned Ubuntu image digest. GitHub check runs `verify`,
+  `cloudflare-config`, `dependency-and-secret-scan`, and `validate` succeed on
+  commit `0a049ed38a98739313ed686403382a24a694ecfa`. Branch and version-tag
+  protection are activated only after this evidence record is final on `main`,
+  then read back through the GitHub API.
 - Blocker: No live provider test, image signing, provider image smoke, Worker,
   D1, R2, Queue, Workflow, DNS, Tunnel, VPS, or production release was run.
   Those operations still require reviewed credentials and an explicit live

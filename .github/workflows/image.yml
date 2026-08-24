@@ -1,37 +1,9 @@
 name: Node image
 
 on:
-  pull_request:
-    paths:
-      - 'apps/agent/**'
-      - 'infra/packer/**'
-      - 'infra/images/**'
-      - 'infra/docker/**'
-      - 'infra/scripts/**'
-      - 'packages/docker-runtime/**'
-      - 'packages/agent-protocol/**'
-      - 'packages/agent-observation-control/**'
-      - 'packages/backup-runtime/**'
-      - 'packages/contracts/**'
-      - 'packages/node-provision-control/**'
-      - 'packages/node-provision-execution/**'
-      - 'packages/plugin-registry/**'
-      - 'packages/plugin-sdk/**'
-      - 'packages/plugin-sdk-agent/**'
-      - 'packages/steam-runtime/**'
-      - 'packages/tunnel-credential/**'
-      - 'packages/tunnel-installer/**'
-      - 'plugins/games/**'
-      - 'tests/image/**'
-      - 'tests/infrastructure/**'
-      - '.npmrc'
-      - 'package.json'
-      - 'pnpm-lock.yaml'
-      - 'pnpm-workspace.yaml'
-      - 'tsconfig.base.json'
-      - 'tsconfig.json'
-      - 'vite.config.ts'
-      - '.github/workflows/image.yml'
+  # This check is required by main protection, so every pull request must
+  # produce the context even when its diff does not touch image paths.
+  pull_request: {}
   # Release evidence must exist for the exact commit, even when a main change
   # does not match the narrower pull-request image paths.
   push:

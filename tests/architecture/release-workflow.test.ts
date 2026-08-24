@@ -7,39 +7,12 @@ import { parse } from 'yaml'
 const read = (path: string): string => readFileSync(resolve(process.cwd(), path), 'utf8')
 
 describe('release workflow evidence', () => {
-  it('runs image validation for every exact main commit and all image inputs on pull requests', () => {
+  it('runs image validation for every exact main commit and every pull request', () => {
     const workflow = parse(read('.github/workflows/image.yml'))
     const triggers = workflow.on
-    const pullRequestPaths = triggers.pull_request.paths as string[]
 
     expect(triggers.push.branches).toEqual(['main'])
-    expect(pullRequestPaths).toEqual(
-      expect.arrayContaining([
-        'apps/agent/**',
-        'infra/packer/**',
-        'infra/images/**',
-        'infra/docker/**',
-        'infra/scripts/**',
-        'packages/agent-protocol/**',
-        'packages/backup-runtime/**',
-        'packages/contracts/**',
-        'packages/docker-runtime/**',
-        'packages/plugin-registry/**',
-        'packages/plugin-sdk/**',
-        'packages/plugin-sdk-agent/**',
-        'packages/steam-runtime/**',
-        'packages/tunnel-credential/**',
-        'packages/tunnel-installer/**',
-        'plugins/games/**',
-        '.npmrc',
-        'package.json',
-        'pnpm-lock.yaml',
-        'pnpm-workspace.yaml',
-        'tsconfig.base.json',
-        'tsconfig.json',
-        'vite.config.ts',
-      ]),
-    )
+    expect(triggers.pull_request).toEqual({})
     expect(workflow.permissions).toEqual({ contents: 'read' })
     expect(workflow.jobs['build-local'].permissions).toEqual({
       contents: 'read',

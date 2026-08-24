@@ -51,11 +51,12 @@ package-manager writes after privilege is granted, or report success on a
 hosted runner that does not grant network and mount capabilities.
 
 Use the successful check-run names from the published commit as the source of
-truth for branch protection. Gate every workflow environment that can reach a
-live provider, sign an image, run provider image smoke, or publish a production
-release with a required reviewer. Protect version tags separately from the
-main branch. Do not add credentials or invoke a deployment as part of this
-decision.
+truth for branch protection. Run every required workflow on every pull request
+so a path filter cannot make an unrelated change permanently unmergeable. Gate
+every workflow environment that can reach a live provider, sign an image, run
+provider image smoke, or publish a production release with a required reviewer.
+Protect version tags separately from the main branch. Do not add credentials
+or invoke a deployment as part of this decision.
 
 ## Consequences
 
