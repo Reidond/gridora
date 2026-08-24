@@ -114,3 +114,5 @@ Rejected.
   automated release gates, and ephemeral release evidence.
 - ADR 0087 defines the Linux KVM firewall proof at the Docker host-DNAT boundary
   instead of same-bridge layer-2 traffic.
+- ADR 0088 defines explicit disposable loop-device allocation and moves
+  non-secret kernel proofs into required pull-request validation.

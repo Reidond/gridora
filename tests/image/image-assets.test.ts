@@ -20,6 +20,18 @@ describe('node image assets', () => {
     expect(integration).not.toContain('http://${allowed_ip}:2302')
   })
 
+  it('allocates an explicit disposable loop device for the project-quota proof', () => {
+    const quota = asset('infra/scripts/validate-project-quota.sh')
+    const workflow = asset('.github/workflows/image.yml')
+    expect(quota).toContain('mknod -m 0600 /dev/loop-control c 10 237')
+    expect(quota).toContain('mknod -m 0600 "/dev/loop${index}" b 7 "$index"')
+    expect(quota).toContain('losetup --find --show "$image"')
+    expect(quota).toContain('losetup --detach "$loop_device"')
+    expect(quota).not.toContain('mount -o loop,')
+    expect(workflow.match(/validate-project-quota\.sh/g)).toHaveLength(4)
+    expect(workflow).toContain('Prove privileged node kernel boundaries on the hosted runner')
+  })
+
   it('hardens the agent systemd unit', () => {
     const unit = asset('infra/images/systemd/gridora-agent.service')
     expect(unit).toContain('NoNewPrivileges=true')

@@ -199,6 +199,14 @@ jobs:
               chmod 0644 /var/lib/gridora/tunnel/credential
               ! CREDENTIALS_DIRECTORY=/run/credentials/cloudflared.service /workspace/infra/images/validate-cloudflared-token
             '
+      - name: Prove privileged node kernel boundaries on the hosted runner
+        run: |
+          docker run --rm --privileged --user 0:0 -v "$PWD:/workspace:ro" \
+            gridora-node-validation:ci \
+            /workspace/infra/scripts/validate-firewall-docker-networking.sh
+          docker run --rm --privileged --user 0:0 -v "$PWD:/workspace:ro" \
+            gridora-node-validation:ci \
+            /workspace/infra/scripts/validate-project-quota.sh
       - name: Exercise the packaged bootstrap and execution renderer
         run: |
           pnpm install --frozen-lockfile

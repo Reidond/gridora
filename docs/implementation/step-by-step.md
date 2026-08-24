@@ -3477,7 +3477,48 @@ remained reachable.` The probe connected directly between two containers on
   complete `pnpm run ci` gate reports 892 correctly formatted files, zero lint
   or type errors across 522 files, 226 passing test files with 1,494 passing
   tests, and 112 successful builds.
-- Blocker: Publish the correction through a protected pull request, rerun the
-  exact main image workflow, approve signing and simulated smoke, and complete
-  the protected release.
+- Blocker: Pull request 8 merged as `765bb3a`. The corrected firewall proof
+  passed in protected run 32741854152, then the separate project-quota proof
+  failed because the hosted privileged container could not discover an implicit
+  loop device. Step 113 makes that allocation explicit and moves both kernel
+  proofs before merge. The image, smoke, tag, and release remain.
 - Decision: ADR 0087.
+
+## Step 113: Allocate quota loop devices explicitly before protected signing
+
+- Status: local
+- Situation: Protected run 32741854152 proved the corrected leased and unleased
+  firewall paths, then failed at `mount -o loop` with `mount(2) system call
+failed: No such process.` GitHub's hosted privileged container did not expose
+  reliable implicit loop-device discovery. The same non-secret kernel proof was
+  unnecessarily delayed until after merge and image-signing approval.
+- Task: Make the ext4 project-quota proof independent of container udev device
+  population and run both privileged kernel proofs as required pull-request
+  evidence before any signing environment is entered.
+- Action: In the disposable privileged container, create the standard loop
+  control character node and loop block-device nodes only when absent. Attach
+  the preallocated ext4 image with explicit `losetup --find --show`. Mount the
+  returned device with `prjquota`. Always unmount and detach that exact device.
+- Action: Run the pinned validation image's firewall and project-quota scripts
+  in the public `validate` job for pull requests, main pushes, and dispatches.
+  Repeat the same proof in the owner-approved artifact build. Do not pass
+  secrets, a host Docker socket, or a game container into either proof.
+- Result: Missing loop nodes cannot masquerade as a quota failure. Native Linux
+  firewall and quota capabilities must pass before a correction can merge, and
+  the protected build repeats them before it reads signing inputs.
+- Evidence: `infra/scripts/validate-project-quota.sh`,
+  `.github/workflows/image.yml`, `tests/image/image-assets.test.ts`, protected
+  run 32741854152, and ADR 0088.
+- Verification: Bash syntax and ShellCheck pass. The pinned privileged
+  validation container creates, mounts, enforces, unmounts, and detaches the
+  explicit loop-backed ext4 project-quota filesystem locally. A four-megabyte
+  unprivileged write is rejected at the one-megabyte hard limit with `Disk quota
+exceeded`. The image asset test requires explicit loop setup, both executable
+  workflow proofs, and both static script checks. The complete `pnpm run ci`
+  gate reports 893 correctly formatted files, zero lint or type errors across
+  522 files, 226 passing test files with 1,495 passing tests, and 112 successful
+  builds.
+- Blocker: Publish the correction, require the native Linux PR kernel proof,
+  merge, rerun the exact main image workflow, approve signing and simulated
+  smoke, then complete the protected release.
+- Decision: ADR 0088.
