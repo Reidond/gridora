@@ -20,7 +20,8 @@ sudo docker version --format '{{.Server.APIVersion}}' | awk -F. '
   END { exit !compatible }
 '
 
-sudo install -d -m 0755 /etc/gridora /opt/gridora /var/lib/gridora /var/log/gridora
+sudo install -d -m 0755 \
+  /etc/gridora /etc/systemd/journald.conf.d /opt/gridora /var/lib/gridora /var/log/gridora
 jq -e \
   --arg version "${GRIDORA_IMAGE_VERSION}" \
   --arg sourceCommit "${GRIDORA_SOURCE_COMMIT}" \

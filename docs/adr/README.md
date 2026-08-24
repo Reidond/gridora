@@ -128,3 +128,5 @@ Rejected.
   content-only asset upload before the SCP provisioner runs.
 - ADR 0094 gives the key-authenticated Packer build account a validated
   temporary sudo grant and removes it with the build key before shutdown.
+- ADR 0095 creates the journald drop-in directory explicitly before installing
+  the immutable node logging policy into a minimal Ubuntu guest.
