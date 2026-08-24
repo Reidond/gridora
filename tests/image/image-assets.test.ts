@@ -65,6 +65,15 @@ describe('node image assets', () => {
     expect(workflow).not.toContain('- name: Create and scan supply-chain evidence')
   })
 
+  it('passes the pinned Grype command output into the rootfs scanner', () => {
+    const workflow = asset('.github/workflows/image.yml')
+    const scanner = asset('infra/scripts/scan-artifact.sh')
+    expect(workflow).toContain('- id: download-grype')
+    expect(workflow).toContain('${{ steps.download-grype.outputs.cmd }}')
+    expect(scanner).toContain('grype_command=${2:-grype}')
+    expect(scanner).toContain('"${grype_command}" "${rootfs_archive}" --fail-on high --only-fixed')
+  })
+
   it('hardens the agent systemd unit', () => {
     const unit = asset('infra/images/systemd/gridora-agent.service')
     expect(unit).toContain('NoNewPrivileges=true')

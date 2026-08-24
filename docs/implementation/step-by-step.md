@@ -3941,3 +3941,30 @@ directory /lib/modules/6.17.0-1022-azure`. Step 116 installs the matching
   until the replacement run passes extraction, SBOM, scan, signing, upload, and
   provider smoke.
 - Decision: ADR 0101.
+
+## Step 127: Bind the pinned rootfs scanner command
+
+- Status: local
+- Situation: Owner-approved exact-main run 32777016896 built and validated the
+  QCOW2. Rootfs extraction and SBOM generation passed. The scan stage then
+  reported `grype is required`. The pinned download action installed Grype
+  0.110.0 in the hosted tool cache and exposed its absolute path as the `cmd`
+  output, but it did not add that path to the later shell environment.
+- Task: Run the exact downloaded scanner without relying on a mutable or absent
+  `PATH` side effect.
+- Action: Give the pinned Grype download step a fixed identifier. Pass its
+  declared `cmd` output to the scan script. Keep `grype` as the local default
+  when an explicit command is not supplied.
+- Action: Require the selected command to exist. Preserve the canonical rootfs
+  archive, `high` failure threshold, and `only-fixed` rule.
+- Result: The protected scan invokes the pinned hosted-tool-cache binary by its
+  resolved absolute path. A missing output fails closed before signing.
+- Evidence: `.github/workflows/image.yml`, `infra/scripts/scan-artifact.sh`,
+  `tests/image/image-assets.test.ts`, failed protected run 32777016896, and ADR 0102.
+- Verification: Require workflow parsing, Bash parsing, ShellCheck, focused
+  image and documentation tests, the complete repository gate, pull-request CI
+  and Security, then a replacement owner-approved exact-main build and
+  separately approved simulated-provider smoke.
+- Blocker: Run 32777016896 uploaded no accepted artifact. Do not tag or release
+  until the replacement run passes scan, signing, upload, and provider smoke.
+- Decision: ADR 0102.

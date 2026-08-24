@@ -9,6 +9,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 const execute = promisify(execFile)
 const extractor = resolve(process.cwd(), 'infra/scripts/extract-rootfs-evidence.sh')
 const generateSbom = resolve(process.cwd(), 'infra/scripts/generate-sbom.sh')
+const scanArtifact = resolve(process.cwd(), 'infra/scripts/scan-artifact.sh')
 const verifyArtifact = resolve(process.cwd(), 'infra/scripts/verify-artifact.sh')
 const verifyReleaseImageEvidence = resolve(
   process.cwd(),
@@ -67,6 +68,24 @@ const rootfsArchive = async (root: string) => {
 }
 
 describe('node image rootfs evidence', () => {
+  it('runs the explicit pinned scanner command with the fixed vulnerability policy', async () => {
+    const root = await makeRoot()
+    const archive = join(root, 'node.qcow2.rootfs.tar')
+    const invocation = join(root, 'grype.log')
+    const grype = await makeExecutable(
+      root,
+      'pinned-grype',
+      '#!/usr/bin/env bash\nset -euo pipefail\nprintf "%s\\n" "$*" > "$GRIDORA_TEST_GRYPE_LOG"\n',
+    )
+    await writeFile(archive, 'rootfs fixture')
+
+    await execute(scanArtifact, [archive, grype], {
+      env: { ...process.env, GRIDORA_TEST_GRYPE_LOG: invocation },
+    })
+
+    expect(await readFile(invocation, 'utf8')).toBe(`${archive} --fail-on high --only-fixed\n`)
+  })
+
   it('extracts a read-only guest filesystem archive and proves a non-empty package inventory', async () => {
     const root = await makeRoot()
     const artifact = join(root, 'node.qcow2')
