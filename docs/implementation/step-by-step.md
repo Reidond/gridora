@@ -3372,3 +3372,28 @@ COMMERCIAL_REVIEW_REQUIRED` public envelope. Workflow check and 29 tests,
   not boot a signed provider image or create a paid VPS. The protected image
   workflow and simulated provider smoke remain separate release evidence.
 - Decision: ADR 0085.
+
+## Step 110: Publish the protected production release candidate
+
+- Status: local
+- Situation: The public repository still contained only the earlier pre-alpha
+  implementation. The live Cloudflare deployment and Docker VPS evidence needed
+  one reviewable source commit and one protected pull request.
+- Task: Publish the exact release candidate without bypassing main review,
+  required checks, tag rules, or release-environment approval.
+- Action: Commit the implementation as `341bb4f`. Push branch
+  `release/live-staging-arma-simulation`. Open public pull request 7 against
+  `main`.
+- Action: Re-read main protection. Require a current approving review, strict
+  status checks, and enforcement for administrators. Re-read the production
+  release environment. Disable self-review and administrator bypass.
+- Evidence: GitHub pull request 7 and commit `341bb4f` in public repository
+  `Reidond/gridora`.
+- Verification: The remote branch contains the reviewed source commit. GitHub
+  reports required main checks `verify`, `cloudflare-config`,
+  `dependency-and-secret-scan`, and `validate` with strict review enforcement.
+- Blocker: The repository has one collaborator. That account cannot approve its
+  own pull request or protected production deployment. Release evidence also
+  needs a short-lived repository-scoped GitHub App installation token. Do not
+  weaken either control to publish a tag or release.
+- Decision: ADR 0084.
