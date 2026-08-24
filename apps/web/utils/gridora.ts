@@ -69,6 +69,16 @@ export const safeAuthReturnPath = (value: unknown, fallback = '/') => {
     : fallback
 }
 
+/** Routes that the unauthenticated public application may render directly. */
+export const isPublicAppRoute = (pathname: string) =>
+  ['/sign-in', '/sign-up', '/auth/complete'].includes(pathname) ||
+  pathname.startsWith('/legal/') ||
+  pathname.startsWith('/invitations/')
+
+/** Send a public-app console route through the bounded sign-in entry point. */
+export const publicAppSignInPath = (route: unknown) =>
+  `/sign-in?returnTo=${encodeURIComponent(safeAuthReturnPath(route))}`
+
 /** The identity provider receives no authentication metadata except opaque state. */
 export const accessRedirectUrl = (entryUrl: string, state: string) => {
   const url = new URL(entryUrl, globalThis.location?.origin ?? 'https://console.gridora.invalid')

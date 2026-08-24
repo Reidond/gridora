@@ -21,6 +21,7 @@ export default defineNuxtConfig({
       apiBase: process.env.NUXT_PUBLIC_API_BASE ?? '',
       dataMode: process.env.NUXT_PUBLIC_DATA_MODE ?? 'api',
       accessCompletionUrl: process.env.NUXT_PUBLIC_ACCESS_COMPLETION_URL ?? '',
+      publicAppOrigin: process.env.NUXT_PUBLIC_PUBLIC_APP_ORIGIN ?? '',
     },
   },
   nitro: {

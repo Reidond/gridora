@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { createAuthenticationApi } from '../services/gridora-api'
+import { isPublicAppRoute, publicAppSignInPath } from '../utils/gridora'
 
 const identity = {
   id: 'identity_01',
@@ -18,6 +19,17 @@ const requestUrl = (input: RequestInfo | URL): string =>
   input instanceof Request ? input.url : input instanceof URL ? input.href : input
 
 describe('opaque authentication state contract', () => {
+  it('keeps public entry routes local and sends console routes through bounded sign in', () => {
+    expect(isPublicAppRoute('/sign-in')).toBe(true)
+    expect(isPublicAppRoute('/legal/privacy')).toBe(true)
+    expect(isPublicAppRoute('/invitations/invitation_01')).toBe(true)
+    expect(isPublicAppRoute('/')).toBe(false)
+    expect(publicAppSignInPath('/dashboard?view=operations')).toBe(
+      '/sign-in?returnTo=%2Fdashboard%3Fview%3Doperations',
+    )
+    expect(publicAppSignInPath('https://attacker.example/')).toBe('/sign-in?returnTo=%2F')
+  })
+
   it('keeps profile data in the API request and sends only state to completion', async () => {
     const responses = [
       { state: 'state_opaque-01', expiresAt: Date.now() + 300_000 },

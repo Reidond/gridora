@@ -1,10 +1,13 @@
 import { GridoraApiError } from '~/services/gridora-api'
+import { isPublicAppRoute, publicAppSignInPath } from '~/utils/gridora'
 
 export default defineNuxtRouteMiddleware(async (to) => {
-  const publicRoute =
-    ['/sign-in', '/sign-up', '/auth/complete'].includes(to.path) ||
-    to.path.startsWith('/legal/') ||
-    to.path.startsWith('/invitations/')
+  const publicRoute = isPublicAppRoute(to.path)
+  if (import.meta.client) {
+    const publicAppOrigin = String(useRuntimeConfig().public.publicAppOrigin).replace(/\/$/, '')
+    if (publicAppOrigin && globalThis.location.origin === publicAppOrigin && !publicRoute)
+      return navigateTo(publicAppSignInPath(to.fullPath), { replace: true })
+  }
   if (publicRoute || import.meta.server) return
   const state = useGridoraState()
   try {

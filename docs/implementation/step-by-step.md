@@ -3968,3 +3968,78 @@ directory /lib/modules/6.17.0-1022-azure`. Step 116 installs the matching
 - Blocker: Run 32777016896 uploaded no accepted artifact. Do not tag or release
   until the replacement run passes scan, signing, upload, and provider smoke.
 - Decision: ADR 0102.
+
+## Step 128: Bind image scanning to signed package facts
+
+- Status: local
+- Situation: Owner-approved exact-main run 32779717636 built the QCOW2 and
+  reached the real vulnerability gate. Grype found fixed High vulnerabilities.
+  It also read a generic kernel version and stale module versions inside
+  stripped Docker package binaries. The run produced no accepted artifact.
+- Task: Keep the High-or-Critical gate and give it authoritative package and
+  binary evidence.
+- Action: Upgrade Ubuntu fully. Install exact Docker 29.7.2, containerd 2.3.3,
+  Buildx 0.36.1, and Compose 5.5.0 packages from Docker's signed Noble
+  repository. Verify the key fingerprint, source, versions, owned paths, and
+  absence of pending upgrades.
+- Action: Build cloudflared 2026.8.2 from exact commit
+  `733bfb939963e150dcf5c4faddb1603f744fbc98` with its vendored dependencies and
+  Go 1.27.0. Record the source, toolchain, and artifact digest.
+- Action: Pin Syft 1.51.0 and Grype 0.117.0. Omit the generic kernel cataloger.
+  Remove Go-module facts only for nine exact Docker-package-owned binary paths.
+  Keep the five Debian packages in the SPDX document. Scan that validated SPDX
+  document with the unchanged `high` and `only-fixed` rule.
+- Result: Ubuntu kernel evidence comes from Ubuntu package records. Docker
+  evidence comes from exact signed packages and ownership lists. cloudflared
+  uses the current Go toolchain. There is no vulnerability-ID suppression and
+  no lower severity threshold.
+- Evidence: `.github/workflows/image.yml`,
+  `infra/packer/scripts/provision.sh`,
+  `infra/scripts/validate-rootfs-package-policy.sh`,
+  `infra/scripts/generate-sbom.sh`, `infra/scripts/scan-artifact.sh`, protected
+  run 32779717636, and ADR 0103.
+- Verification: Require Bash parsing, ShellCheck, focused policy, SBOM, scan,
+  image, workflow, and documentation tests, Packer formatting and validation,
+  the complete repository gate, pull-request CI and Security, then a new
+  owner-approved exact-main build and separately approved simulated-provider
+  smoke. Local proof includes Bash and ShellCheck, Packer 1.14.2 formatting and
+  validation, 42 focused tests, 909 formatted files, zero lint or type errors
+  across 522 files, 226 passing test files with 1,507 passing tests, and 112
+  successful builds. The dependency audit and Trivy High-or-Critical fixed
+  vulnerability and secret scan also pass.
+- Blocker: Do not tag or release until the replacement run signs and uploads
+  the image and completes provider smoke.
+- Decision: ADR 0103.
+
+## Step 129: Bind public entry to the protected console
+
+- Status: local
+- Situation: Production browser QA showed that sign-in and sign-up rendered,
+  but `https://gridora.coasts.red/` called `/v1/auth/bootstrap` on the web
+  Worker. The response was SPA HTML, and the console displayed `Unexpected
+token '<'` because the deployed Nuxt runtime had an empty API base.
+- Task: Give the public application exact environment origins and prevent it
+  from loading an authenticated console route before Cloudflare Access.
+- Action: Add explicit Nuxt public bindings for the API base, API mode, Access
+  completion URL, and public application origin. Render those values from the
+  validated Cloudflare environment contract. Send non-public routes on the
+  public hostname to sign-in with a bounded same-origin return path.
+- Result: The public hostname serves sign-in, sign-up, legal, and invitation
+  entry routes. Authentication completes on `console.gridora.coasts.red`, and
+  authenticated API requests use `api.gridora.coasts.red`. A local rendered
+  Worker injects the staging equivalents into a build that has empty defaults.
+- Evidence: `apps/web/wrangler.jsonc`, `apps/web/nuxt.config.ts`,
+  `apps/web/middleware/bootstrap.global.ts`, `apps/web/utils/gridora.ts`,
+  `infra/scripts/render-cloudflare-environment.mjs`, production Playwright QA,
+  and ADR 0104.
+- Verification: Require the focused environment and onboarding tests, Nuxt
+  build, local rendered-Worker response inspection, complete repository gate,
+  pull-request CI and Security, production deployment, then desktop and mobile
+  browser QA with zero console errors. The local focused suite passes 42 tests,
+  the Cloudflare runtime suite passes 11 tests, and the complete gate passes
+  with the counts recorded in Step 128. The Docker VPS Arma lifecycle passes
+  install, configure, start, probe, update, rollback, and stop.
+- Blocker: Do not call the production console repaired until the merged web
+  Worker is deployed and the live public and protected hostnames pass browser
+  verification.
+- Decision: ADR 0104.

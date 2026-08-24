@@ -144,6 +144,7 @@ jobs:
             infra/scripts/generate-sbom.sh \
             infra/scripts/scan-artifact.sh \
             infra/scripts/sign-artifact.sh \
+            infra/scripts/validate-rootfs-package-policy.sh \
             infra/scripts/verify-artifact.sh \
             infra/scripts/validate-firewall-docker-networking.sh \
             infra/scripts/validate-project-quota.sh
@@ -161,6 +162,7 @@ jobs:
             infra/scripts/generate-sbom.sh \
             infra/scripts/scan-artifact.sh \
             infra/scripts/sign-artifact.sh \
+            infra/scripts/validate-rootfs-package-policy.sh \
             infra/scripts/verify-artifact.sh \
             infra/scripts/validate-firewall-docker-networking.sh \
             infra/scripts/validate-project-quota.sh
@@ -235,6 +237,13 @@ jobs:
       LIBGUESTFS_BACKEND: direct
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - name: Checkout the exact cloudflared source
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          repository: cloudflare/cloudflared
+          ref: 733bfb939963e150dcf5c4faddb1603f744fbc98
+          path: .vendor/cloudflared
+          persist-credentials: false
       - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
         with:
           version: '11.21.0'
@@ -242,6 +251,10 @@ jobs:
         with:
           node-version: '24.19.0'
           cache: pnpm
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v7.0.0
+        with:
+          go-version: '1.27.0'
+          cache: false
       - uses: hashicorp/setup-packer@ce93c3c08a6c2ff2275bf4b54ff0d9a75f6c9789 # v3
         with:
           version: '1.14.2'
@@ -275,8 +288,12 @@ jobs:
           sudo unshare --mount --propagation private \
             bash infra/scripts/validate-project-quota.sh
       - uses: anchore/sbom-action/download-syft@f8bdd1d8ac5e901a77a92f111440fdb1b593736b # v0.20.6
+        with:
+          syft-version: v1.51.0
       - id: download-grype
         uses: anchore/scan-action/download-grype@e1165082ffb1fe366ebaf02d8526e7c4989ea9d2 # v7
+        with:
+          grype-version: v0.117.0
       - uses: sigstore/cosign-installer@d7543c93d881b35a8faa02e8e3605f69b7a1ce62 # v3.10.0
       - name: Build the agent from the reviewed commit
         run: |
@@ -297,16 +314,30 @@ jobs:
             --output "$RUNNER_TEMP/node-runtime.tar.xz" \
             "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz"
           printf '%s  %s\n' "$NODE_ARCHIVE_SHA256" "$RUNNER_TEMP/node-runtime.tar.xz" | sha256sum --check --strict
-      - name: Download the pinned cloudflared binary
+      - name: Build cloudflared from exact reviewed source
         env:
-          CLOUDFLARED_SHA256: fcfb02b575a52ca1af2e3267af4e1517bcdeb30ac48c834c69abaed3c0576ad2
+          CLOUDFLARED_BUILD_TIME: 2026-08-14T11:22:52Z
+          CLOUDFLARED_SOURCE_COMMIT: 733bfb939963e150dcf5c4faddb1603f744fbc98
           CLOUDFLARED_VERSION: 2026.8.2
         run: |
-          curl --fail --show-error --silent --location \
-            --output "$RUNNER_TEMP/cloudflared" \
-            "https://github.com/cloudflare/cloudflared/releases/download/${CLOUDFLARED_VERSION}/cloudflared-linux-amd64"
-          printf '%s  %s\n' "$CLOUDFLARED_SHA256" "$RUNNER_TEMP/cloudflared" | sha256sum --check --strict
+          test "$(git -C .vendor/cloudflared rev-parse HEAD)" = "$CLOUDFLARED_SOURCE_COMMIT"
+          test "$(go env GOVERSION)" = go1.27.0
+          (
+            cd .vendor/cloudflared
+            CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
+              -mod=vendor \
+              -trimpath \
+              -buildvcs=false \
+              -ldflags="-s -w -X main.Version=$CLOUDFLARED_VERSION -X main.BuildTime=$CLOUDFLARED_BUILD_TIME" \
+              -o "$RUNNER_TEMP/cloudflared" \
+              ./cmd/cloudflared
+          )
           chmod 0755 "$RUNNER_TEMP/cloudflared"
+          go version -m "$RUNNER_TEMP/cloudflared" | grep -F ': go1.27.0'
+          "$RUNNER_TEMP/cloudflared" version | grep -F \
+            "cloudflared version $CLOUDFLARED_VERSION (built $CLOUDFLARED_BUILD_TIME)"
+          cloudflared_sha=$(sha256sum "$RUNNER_TEMP/cloudflared" | cut -d ' ' -f 1)
+          echo "CLOUDFLARED_SHA256=$cloudflared_sha" >> "$GITHUB_ENV"
       - name: Download the pinned Traefik binary
         env:
           TRAEFIK_ARCHIVE_SHA256: 0bd0b7152805af906a9feb5aec95e96322237d715ae89c4fe3adbbc07a63b631
@@ -411,7 +442,6 @@ jobs:
         env:
           AGENT_BINARY: ${{ github.workspace }}/apps/agent/dist/main.mjs
           CLOUDFLARED_BINARY: ${{ runner.temp }}/cloudflared
-          CLOUDFLARED_SHA256: fcfb02b575a52ca1af2e3267af4e1517bcdeb30ac48c834c69abaed3c0576ad2
           IMAGE_VERSION: ${{ github.run_id }}.${{ github.run_attempt }}
           NODE_ARCHIVE: ${{ runner.temp }}/node-runtime.tar.xz
           NODE_ARCHIVE_SHA256: 14b342e71204f811bde6153be8e04b62aef63c236fef92b55f9c83154b409647
@@ -479,12 +509,17 @@ jobs:
             --arg commit "$GITHUB_SHA" \
             --arg agent "$agent_sha" \
             --arg cloudflared "$CLOUDFLARED_SHA256" \
+            --arg cloudflaredSourceCommit 733bfb939963e150dcf5c4faddb1603f744fbc98 \
+            --arg cloudflaredGoVersion 1.27.0 \
             --arg node "$NODE_ARCHIVE_SHA256" \
             --arg traefik "$traefik_sha" \
             --arg traefikArchive "$TRAEFIK_ARCHIVE_SHA256" \
             --arg ubuntuIso "$UBUNTU_ISO_URL" \
             --arg ubuntu "$UBUNTU_ISO_SHA256" \
-            '{commit: $commit, inputs: {agentSha256: $agent, cloudflaredSha256: $cloudflared, nodeSha256: $node, traefikSha256: $traefik, traefikArchiveSha256: $traefikArchive, ubuntuIsoUrl: $ubuntuIso, ubuntuIsoSha256: $ubuntu}}' \
+            '{commit: $commit, inputs: {agentSha256: $agent, cloudflaredSha256: $cloudflared,
+              cloudflaredSourceCommit: $cloudflaredSourceCommit, cloudflaredGoVersion: $cloudflaredGoVersion,
+              nodeSha256: $node, traefikSha256: $traefik, traefikArchiveSha256: $traefikArchive,
+              ubuntuIsoUrl: $ubuntuIso, ubuntuIsoSha256: $ubuntu}}' \
             > "$image_path.inputs.json"
       - name: Check the QCOW2 artifact
         run: |
@@ -498,17 +533,22 @@ jobs:
             "$IMAGE_PATH.rootfs.tar" \
             "$IMAGE_PATH.rootfs-evidence.json"
           sha256sum "$IMAGE_PATH" "$IMAGE_PATH.rootfs.tar" > "$IMAGE_PATH.sha256"
+      - name: Validate signed rootfs package policy
+        run: |
+          infra/scripts/validate-rootfs-package-policy.sh \
+            "$IMAGE_PATH.rootfs.tar" \
+            "$IMAGE_PATH.rootfs-evidence.json"
       - name: Generate rootfs SBOM
         run: |
           infra/scripts/generate-sbom.sh \
             "$IMAGE_PATH.rootfs.tar" \
             "$IMAGE_PATH.spdx.json" \
             "$IMAGE_PATH.rootfs-evidence.json"
-      - name: Scan rootfs archive
+      - name: Scan policy-validated rootfs SBOM
         run: |
           set -o pipefail
           infra/scripts/scan-artifact.sh \
-            "$IMAGE_PATH.rootfs.tar" \
+            "$IMAGE_PATH.spdx.json" \
             "${{ steps.download-grype.outputs.cmd }}" \
             | tee "$IMAGE_PATH.scan.log"
       - name: Sign and verify the QCOW2 artifact

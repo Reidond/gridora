@@ -72,6 +72,12 @@ describe('Cloudflare environment binding bridge', () => {
       { pattern: 'staging.gridora.coasts.red', custom_domain: true },
       { pattern: 'console.staging.gridora.coasts.red', custom_domain: true },
     ])
+    expect(web.vars).toEqual({
+      NUXT_PUBLIC_API_BASE: 'https://api.staging.gridora.coasts.red',
+      NUXT_PUBLIC_DATA_MODE: 'api',
+      NUXT_PUBLIC_ACCESS_COMPLETION_URL: 'https://console.staging.gridora.coasts.red/auth/complete',
+      NUXT_PUBLIC_PUBLIC_APP_ORIGIN: 'https://staging.gridora.coasts.red',
+    })
     expect(apiD1).toMatchObject({
       database_name: 'gridora-staging',
       database_id: '00000000-0000-4000-8000-000000000000',
@@ -178,6 +184,12 @@ describe('Cloudflare environment binding bridge', () => {
       { pattern: 'gridora.coasts.red', custom_domain: true },
       { pattern: 'console.gridora.coasts.red', custom_domain: true },
     ])
+    expect(web.vars).toEqual({
+      NUXT_PUBLIC_API_BASE: 'https://api.gridora.coasts.red',
+      NUXT_PUBLIC_DATA_MODE: 'api',
+      NUXT_PUBLIC_ACCESS_COMPLETION_URL: 'https://console.gridora.coasts.red/auth/complete',
+      NUXT_PUBLIC_PUBLIC_APP_ORIGIN: 'https://gridora.coasts.red',
+    })
   })
 
   it('rejects production or foreign-zone hostnames in the staging binding contract', async () => {

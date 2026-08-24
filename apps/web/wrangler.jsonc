@@ -5,6 +5,12 @@
   "compatibility_date": "2026-08-23",
   "workers_dev": false,
   "preview_urls": false,
+  "vars": {
+    "NUXT_PUBLIC_API_BASE": "https://api.gridora.example",
+    "NUXT_PUBLIC_DATA_MODE": "api",
+    "NUXT_PUBLIC_ACCESS_COMPLETION_URL": "https://console.gridora.example/auth/complete",
+    "NUXT_PUBLIC_PUBLIC_APP_ORIGIN": "https://app.gridora.example",
+  },
   "assets": {
     "binding": "ASSETS",
     "directory": ".output/public",

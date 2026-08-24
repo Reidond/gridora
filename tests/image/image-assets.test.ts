@@ -54,8 +54,9 @@ describe('node image assets', () => {
     const workflow = asset('.github/workflows/image.yml')
     const stages = [
       'Extract rootfs evidence',
+      'Validate signed rootfs package policy',
       'Generate rootfs SBOM',
-      'Scan rootfs archive',
+      'Scan policy-validated rootfs SBOM',
       'Sign and verify the QCOW2 artifact',
       'Create the image promotion manifest',
     ]
@@ -69,9 +70,22 @@ describe('node image assets', () => {
     const workflow = asset('.github/workflows/image.yml')
     const scanner = asset('infra/scripts/scan-artifact.sh')
     expect(workflow).toContain('- id: download-grype')
+    expect(workflow).toContain('grype-version: v0.117.0')
+    expect(workflow).toContain('syft-version: v1.51.0')
     expect(workflow).toContain('${{ steps.download-grype.outputs.cmd }}')
     expect(scanner).toContain('grype_command=${2:-grype}')
-    expect(scanner).toContain('"${grype_command}" "${rootfs_archive}" --fail-on high --only-fixed')
+    expect(scanner).toContain('"${grype_command}" "sbom:${sbom}" --fail-on high --only-fixed')
+  })
+
+  it('builds cloudflared from the exact release source with the fixed Go toolchain', () => {
+    const workflow = asset('.github/workflows/image.yml')
+    expect(workflow).toContain('repository: cloudflare/cloudflared')
+    expect(workflow).toContain('ref: 733bfb939963e150dcf5c4faddb1603f744fbc98')
+    expect(workflow).toContain("go-version: '1.27.0'")
+    expect(workflow).toContain('CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build')
+    expect(workflow).toContain('-mod=vendor')
+    expect(workflow).toContain('-buildvcs=false')
+    expect(workflow).not.toContain('cloudflared/releases/download')
   })
 
   it('hardens the agent systemd unit', () => {
@@ -170,6 +184,23 @@ describe('node image assets', () => {
     expect(provision.indexOf('apt-get install')).toBeLessThan(
       provision.indexOf('usermod -aG docker'),
     )
+  })
+
+  it('installs the exact signed Docker package policy after a complete Ubuntu upgrade', () => {
+    const provision = asset('infra/packer/scripts/provision.sh')
+    const policy = asset('infra/scripts/validate-rootfs-package-policy.sh')
+    expect(provision).toContain('apt-get dist-upgrade -y --no-install-recommends')
+    expect(provision).toContain('https://download.docker.com/linux/ubuntu/gpg')
+    expect(provision).toContain('9DC858229FC7DD38854AE2D88D81803C0EBFCD88')
+    expect(provision).toContain("docker_ce_version='5:29.7.2-1~ubuntu.24.04~noble'")
+    expect(provision).toContain("containerd_io_version='2.3.3-1~ubuntu.24.04~noble'")
+    expect(provision).toContain("docker_buildx_version='0.36.1-1~ubuntu.24.04~noble'")
+    expect(provision).toContain("docker_compose_version='5.5.0-1~ubuntu.24.04~noble'")
+    expect(provision).toContain('apt-get --simulate dist-upgrade')
+    expect(provision).not.toMatch(/\bdocker\.io\b/)
+    expect(provision).not.toContain('docker-compose-v2')
+    expect(policy).toContain('replacementEvidence: "ubuntu-dpkg-package-inventory"')
+    expect(policy).toContain('/usr/libexec/docker/cli-plugins/docker-compose')
   })
 
   it('creates the journald drop-in directory before installing its policy', () => {

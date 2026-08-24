@@ -337,6 +337,13 @@ const applyEnvironmentBindings = (config, sourceRelativePath) => {
     if ('PUBLIC_APP_URL' in config.vars) config.vars.PUBLIC_APP_URL = `https://${publicAppHostname}`
     if ('INVITATION_EMAIL_FROM' in config.vars)
       config.vars.INVITATION_EMAIL_FROM = invitationEmailFrom
+    if ('NUXT_PUBLIC_API_BASE' in config.vars)
+      config.vars.NUXT_PUBLIC_API_BASE = `https://${apiHostname}`
+    if ('NUXT_PUBLIC_DATA_MODE' in config.vars) config.vars.NUXT_PUBLIC_DATA_MODE = 'api'
+    if ('NUXT_PUBLIC_ACCESS_COMPLETION_URL' in config.vars)
+      config.vars.NUXT_PUBLIC_ACCESS_COMPLETION_URL = `https://${consoleHostname}/auth/complete`
+    if ('NUXT_PUBLIC_PUBLIC_APP_ORIGIN' in config.vars)
+      config.vars.NUXT_PUBLIC_PUBLIC_APP_ORIGIN = `https://${publicAppHostname}`
   }
   for (const binding of config.send_email ?? [])
     binding.allowed_sender_addresses = [invitationEmailFrom]

@@ -34,6 +34,21 @@ jq -e \
   .rootfsArchive.sha256 == $rootfsArchiveSha256 and
   .rootfsArchive.inventory.format == "dpkg-status" and
   (.rootfsArchive.inventory.packageCount | type == "number" and . >= 1) and
+  .packagePolicy.schemaVersion == 1 and
+  .packagePolicy.distribution == "ubuntu:24.04" and
+  .packagePolicy.repository == {
+    uri:"https://download.docker.com/linux/ubuntu",
+    suite:"noble",
+    keyFingerprint:"9DC858229FC7DD38854AE2D88D81803C0EBFCD88"
+  } and
+  [.packagePolicy.packages[].name] == [
+    "containerd.io","docker-ce","docker-ce-cli","docker-buildx-plugin","docker-compose-plugin"
+  ] and
+  ([.packagePolicy.packages[].managedGoBinaryPaths[]] | length) == 9 and
+  .packagePolicy.catalogerOverrides == [{
+    name:"linux-kernel-cataloger",
+    replacementEvidence:"ubuntu-dpkg-package-inventory"
+  }] and
   .sbom == {name: $sbom, sha256: $sbomSha256, packageCount: $packageCount}
 ' "${rootfs_evidence}" >/dev/null
 

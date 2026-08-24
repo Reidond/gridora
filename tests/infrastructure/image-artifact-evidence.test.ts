@@ -10,6 +10,10 @@ const execute = promisify(execFile)
 const extractor = resolve(process.cwd(), 'infra/scripts/extract-rootfs-evidence.sh')
 const generateSbom = resolve(process.cwd(), 'infra/scripts/generate-sbom.sh')
 const scanArtifact = resolve(process.cwd(), 'infra/scripts/scan-artifact.sh')
+const validatePackagePolicy = resolve(
+  process.cwd(),
+  'infra/scripts/validate-rootfs-package-policy.sh',
+)
 const verifyArtifact = resolve(process.cwd(), 'infra/scripts/verify-artifact.sh')
 const verifyReleaseImageEvidence = resolve(
   process.cwd(),
@@ -23,6 +27,61 @@ afterEach(async () => {
 
 const digest = (value: string | Buffer) =>
   `sha256:${createHash('sha256').update(value).digest('hex')}`
+
+const dockerFingerprint = '9DC858229FC7DD38854AE2D88D81803C0EBFCD88'
+const dockerPackages = [
+  {
+    name: 'containerd.io',
+    version: '2.3.3-1~ubuntu.24.04~noble',
+    paths: [
+      '/usr/bin/containerd',
+      '/usr/bin/containerd-shim-runc-v2',
+      '/usr/bin/ctr',
+      '/usr/bin/runc',
+    ],
+  },
+  {
+    name: 'docker-ce',
+    version: '5:29.7.2-1~ubuntu.24.04~noble',
+    paths: ['/usr/bin/docker-proxy', '/usr/bin/dockerd'],
+  },
+  {
+    name: 'docker-ce-cli',
+    version: '5:29.7.2-1~ubuntu.24.04~noble',
+    paths: ['/usr/bin/docker'],
+  },
+  {
+    name: 'docker-buildx-plugin',
+    version: '0.36.1-1~ubuntu.24.04~noble',
+    paths: ['/usr/libexec/docker/cli-plugins/docker-buildx'],
+  },
+  {
+    name: 'docker-compose-plugin',
+    version: '5.5.0-1~ubuntu.24.04~noble',
+    paths: ['/usr/libexec/docker/cli-plugins/docker-compose'],
+  },
+] as const
+
+const packagePolicy = {
+  schemaVersion: 1,
+  distribution: 'ubuntu:24.04',
+  repository: {
+    uri: 'https://download.docker.com/linux/ubuntu',
+    suite: 'noble',
+    keyFingerprint: dockerFingerprint,
+  },
+  packages: dockerPackages.map(({ name, version, paths }) => ({
+    name,
+    version,
+    managedGoBinaryPaths: paths,
+  })),
+  catalogerOverrides: [
+    {
+      name: 'linux-kernel-cataloger',
+      replacementEvidence: 'ubuntu-dpkg-package-inventory',
+    },
+  ],
+}
 
 const makeRoot = async () => {
   const root = await mkdtemp(join(tmpdir(), 'gridora-image-evidence-'))
@@ -40,6 +99,7 @@ const makeExecutable = async (root: string, name: string, contents: string) => {
 const rootfsArchive = async (root: string) => {
   const rootfs = join(root, 'rootfs')
   const status = join(rootfs, 'var', 'lib', 'dpkg', 'status')
+  const info = join(rootfs, 'var', 'lib', 'dpkg', 'info')
   const nestedContainerStatus = join(
     rootfs,
     'var',
@@ -53,11 +113,34 @@ const rootfsArchive = async (root: string) => {
     'dpkg',
     'status',
   )
-  await mkdir(join(rootfs, 'var', 'lib', 'dpkg'), { recursive: true })
+  await mkdir(info, { recursive: true })
+  await mkdir(join(rootfs, 'etc', 'apt', 'keyrings'), { recursive: true })
+  await mkdir(join(rootfs, 'etc', 'apt', 'sources.list.d'), { recursive: true })
   await mkdir(join(nestedContainerStatus, '..'), { recursive: true })
   await writeFile(
     status,
-    'Package: gridora-agent\nVersion: 1.0.0\n\nPackage: cloudflared\nVersion: 2026.8.2\n',
+    [
+      'Package: gridora-agent\nVersion: 1.0.0',
+      'Package: cloudflared\nVersion: 2026.8.2',
+      ...dockerPackages.map(({ name, version }) => `Package: ${name}\nVersion: ${version}`),
+    ].join('\n\n') + '\n',
+  )
+  await Promise.all(
+    dockerPackages.map(({ name, paths }) =>
+      writeFile(join(info, `${name}.list`), `${paths.join('\n')}\n`),
+    ),
+  )
+  await writeFile(join(rootfs, 'etc', 'apt', 'keyrings', 'docker.asc'), 'test Docker key\n')
+  await writeFile(
+    join(rootfs, 'etc', 'apt', 'sources.list.d', 'docker.sources'),
+    [
+      'Types: deb',
+      'URIs: https://download.docker.com/linux/ubuntu',
+      'Suites: noble',
+      'Components: stable',
+      'Signed-By: /etc/apt/keyrings/docker.asc',
+      '',
+    ].join('\n'),
   )
   await writeFile(nestedContainerStatus, 'Package: nested-container-only\nVersion: 1.0.0\n')
   const archive = join(root, 'rootfs-source.tar')
@@ -83,7 +166,7 @@ describe('node image rootfs evidence', () => {
       env: { ...process.env, GRIDORA_TEST_GRYPE_LOG: invocation },
     })
 
-    expect(await readFile(invocation, 'utf8')).toBe(`${archive} --fail-on high --only-fixed\n`)
+    expect(await readFile(invocation, 'utf8')).toBe(`sbom:${archive} --fail-on high --only-fixed\n`)
   })
 
   it('extracts a read-only guest filesystem archive and proves a non-empty package inventory', async () => {
@@ -118,7 +201,7 @@ describe('node image rootfs evidence', () => {
     expect(result.artifact).toEqual({ name: 'node.qcow2', sha256: digest('qcow2 fixture') })
     expect(result.rootfsArchive.name).toBe('node.qcow2.rootfs.tar')
     expect(result.rootfsArchive.sha256).toBe(digest(await readFile(archive)))
-    expect(result.rootfsArchive.inventory).toEqual({ format: 'dpkg-status', packageCount: 2 })
+    expect(result.rootfsArchive.inventory).toEqual({ format: 'dpkg-status', packageCount: 7 })
     const extractorSource = await readFile(extractor, 'utf8')
     expect(extractorSource).toContain('--extract --to-stdout')
     expect(extractorSource).not.toContain('--directory')
@@ -137,11 +220,49 @@ describe('node image rootfs evidence', () => {
       'virt-tar-out',
       '#!/usr/bin/env bash\nset -euo pipefail\ncp "$GRIDORA_TEST_ROOTFS_ARCHIVE" "${!#}"\n',
     )
-    const syft = await makeExecutable(
+    await makeExecutable(
       root,
       'syft',
-      '#!/usr/bin/env bash\nset -euo pipefail\nfor argument in "$@"; do case "$argument" in spdx-json=*) output=${argument#spdx-json=};; esac; done\nprintf %s \'{"spdxVersion":"SPDX-2.3","packages":[{"name":"gridora-agent"},{"name":"cloudflared"}]}\' > "$output"\n',
+      `#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\n' "$*" > "$GRIDORA_TEST_SYFT_LOG"
+for argument in "$@"; do case "$argument" in spdx-json=*) output=\${argument#spdx-json=};; esac; done
+printf %s '${JSON.stringify({
+        spdxVersion: 'SPDX-2.3',
+        packages: [
+          { name: 'gridora-agent', SPDXID: 'SPDXRef-agent' },
+          { name: 'cloudflared', SPDXID: 'SPDXRef-cloudflared' },
+          ...dockerPackages.map(({ name, version }) => ({
+            name,
+            versionInfo: version,
+            SPDXID: `SPDXRef-${name}`,
+          })),
+          {
+            name: 'stdlib',
+            versionInfo: 'go1.26.5',
+            SPDXID: 'SPDXRef-managed-stdlib',
+            sourceInfo: 'acquired package info from go module information: usr/bin/docker',
+          },
+        ],
+        relationships: [
+          {
+            spdxElementId: 'SPDXRef-DOCUMENT',
+            relationshipType: 'DESCRIBES',
+            relatedSpdxElement: 'SPDXRef-managed-stdlib',
+          },
+        ],
+      })}' > "$output"
+`,
     )
+    const gpg = await makeExecutable(
+      root,
+      'gpg',
+      `#!/usr/bin/env bash
+set -euo pipefail
+printf 'fpr:::::::::${dockerFingerprint}:\n'
+`,
+    )
+    const syftLog = join(root, 'syft.log')
 
     await execute(extractor, [artifact, archive, evidence], {
       env: {
@@ -150,8 +271,18 @@ describe('node image rootfs evidence', () => {
         GRIDORA_VIRT_TAR_OUT: virtTarOut,
       },
     })
+    await execute(validatePackagePolicy, [archive, evidence], {
+      env: {
+        ...process.env,
+        GRIDORA_GPG_COMMAND: gpg,
+      },
+    })
     await execute(generateSbom, [archive, sbom, evidence], {
-      env: { ...process.env, PATH: `${root}:${process.env.PATH}`, GRIDORA_TEST_SYFT: syft },
+      env: {
+        ...process.env,
+        PATH: `${root}:${process.env.PATH}`,
+        GRIDORA_TEST_SYFT_LOG: syftLog,
+      },
     })
 
     const result = JSON.parse(await readFile(evidence, 'utf8')) as {
@@ -160,8 +291,13 @@ describe('node image rootfs evidence', () => {
     expect(result.sbom).toEqual({
       name: 'node.qcow2.spdx.json',
       sha256: digest(await readFile(sbom)),
-      packageCount: 2,
+      packageCount: 7,
     })
+    expect(await readFile(syftLog, 'utf8')).toContain('--select-catalogers=-linux-kernel-cataloger')
+    const generated = JSON.parse(await readFile(sbom, 'utf8')) as {
+      packages: { SPDXID: string }[]
+    }
+    expect(generated.packages.map(({ SPDXID }) => SPDXID)).not.toContain('SPDXRef-managed-stdlib')
   })
 
   it('rejects a tampered rootfs and invokes Cosign verification for the protected workflow identity', async () => {
@@ -188,6 +324,7 @@ describe('node image rootfs evidence', () => {
           sha256: digest(await readFile(archive)),
           inventory: { format: 'dpkg-status', packageCount: 1 },
         },
+        packagePolicy,
         sbom: {
           name: 'node.qcow2.spdx.json',
           sha256: digest(await readFile(sbom)),
