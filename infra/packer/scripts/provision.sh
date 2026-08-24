@@ -37,10 +37,13 @@ sudo install -d -m 0755 /etc/apt/keyrings
 curl --fail --show-error --silent --location https://download.docker.com/linux/ubuntu/gpg |
   sudo tee /etc/apt/keyrings/docker.asc >/dev/null
 sudo chmod 0644 /etc/apt/keyrings/docker.asc
-docker_repository_fingerprint=$(gpg --batch --no-options --with-colons \
+install -d -m 0700 /tmp/gridora-docker-key-check
+docker_repository_fingerprint=$(GNUPGHOME=/tmp/gridora-docker-key-check \
+  gpg --batch --no-options --with-colons \
   --import-options show-only --import /etc/apt/keyrings/docker.asc 2>/dev/null |
   awk -F: '$1 == "fpr" { print $10; exit }')
 test "${docker_repository_fingerprint}" = "${docker_repository_key_fingerprint}"
+find /tmp/gridora-docker-key-check -depth -delete
 os_id=$(awk -F= '$1 == "ID" { gsub(/^"|"$/, "", $2); print $2 }' /etc/os-release)
 os_codename=$(awk -F= '$1 == "VERSION_CODENAME" { gsub(/^"|"$/, "", $2); print $2 }' /etc/os-release)
 test "${os_id}" = ubuntu

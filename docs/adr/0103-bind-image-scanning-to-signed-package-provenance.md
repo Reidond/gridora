@@ -23,6 +23,11 @@ Go standard library.
 No artifact from the failed run was signed, uploaded, accepted by provider
 smoke, or admitted to a release.
 
+Replacement run 32786521368 then failed before Docker installation because the
+minimal Ubuntu guest did not have a GnuPG home directory. GnuPG exited before
+it inspected the downloaded repository key. This run also produced no image
+artifact.
+
 ## Task
 
 Keep the High-or-Critical fixed-vulnerability gate. Give the scanner one
@@ -36,6 +41,11 @@ exact Docker 29.7.2, containerd 2.3.3, Buildx 0.36.1, and Compose 5.5.0 packages
 from Docker's HTTPS Ubuntu repository. Verify the repository key fingerprint,
 the Noble source definition, every installed package version, and the absence
 of pending upgrades.
+
+Inspect the repository key in a dedicated mode-0700 temporary GnuPG home.
+Delete that directory after the fingerprint matches. Do not depend on a user
+keyring in the minimal image, and do not import the Docker key into a persistent
+user keyring.
 
 Build cloudflared 2026.8.2 from exact source commit
 `733bfb939963e150dcf5c4faddb1603f744fbc98`. Use its vendored dependency tree
@@ -75,3 +85,5 @@ SBOM, scan, image, and documentation tests, Packer formatting and validation,
 the complete repository gate, pull-request CI and Security, then a replacement
 owner-approved exact-main image run. The final proof must also include Cosign
 signing, artifact upload, and separately approved simulated-provider smoke.
+The GnuPG correction must also pass in a clean Ubuntu 24.04 container and prove
+that the temporary keyring is absent after verification.
