@@ -223,7 +223,10 @@ jobs:
     # The verifier pins the keyless certificate identity to main.  A manually
     # dispatched build from another ref is not release evidence and must not
     # look successful to the release gate.
-    if: github.event_name == 'workflow_dispatch' && inputs.build_local_image && github.ref == 'refs/heads/main'
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      inputs.build_local_image &&
+      (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/diagnose/image-provisioner-line')
     needs: validate
     runs-on: ubuntu-24.04
     environment: image-signing
@@ -400,6 +403,35 @@ jobs:
           openssl pkeyutl -verify -pubin -inkey "$RUNNER_TEMP/agent-update-release-signing-public.pem" -rawin \
             -in "$RUNNER_TEMP/agent-update.verify.json" \
             -sigfile <(jq -r '.signature' "$RUNNER_TEMP/agent-update-manifest.json" | base64 --decode) >/dev/null
+      - name: Report the safe agent manifest shape on the diagnostic branch
+        if: github.ref == 'refs/heads/diagnose/image-provisioner-line'
+        env:
+          AGENT_BINARY: ${{ github.workspace }}/apps/agent/dist/main.mjs
+        run: |
+          agent_sha=$(sha256sum "$AGENT_BINARY" | cut -d ' ' -f 1)
+          jq -cS --arg checksum "sha256:$agent_sha" '
+            {
+              topLevelKeys: keys,
+              apiVersion: .apiVersion,
+              version: .version,
+              architecture: .architecture,
+              releaseSequenceType: (.releaseSequence | type),
+              releaseSequenceValid: (.releaseSequence | type == "number" and floor == . and . >= 1),
+              securityEpochType: (.securityEpoch | type),
+              securityEpochValid: (.securityEpoch | type == "number" and floor == . and . >= 1),
+              issuedAtValid: (.issuedAt | type == "string" and test("^[0-9]{4}-[0-9]{2}-[0-9]{2}T")),
+              signatureType: (.signature | type),
+              signatureLength: (.signature | length),
+              signatureAlphabetValid: (.signature | type == "string" and test("^[A-Za-z0-9+/]+={0,2}$")),
+              sourceKeys: (.source | keys),
+              sourceShaMatches: (.source.sha256 == $checksum),
+              sourceSizeValid: (.source.sizeBytes > 0 and .source.sizeBytes <= 134217728),
+              sourceUrlHttps: (.source.url | type == "string" and test("^https://")),
+              compatibilityKeys: (.compatibility | keys),
+              compatibility: .compatibility
+            }
+          ' "$RUNNER_TEMP/agent-update-manifest.json"
+          exit 1
       - name: Build the local QCOW2 image
         env:
           AGENT_BINARY: ${{ github.workspace }}/apps/agent/dist/main.mjs

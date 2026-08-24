@@ -1,6 +1,17 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+report_failure() {
+  local status=$?
+  local failed_line=${BASH_LINENO[0]}
+  local failed_command=${BASH_COMMAND}
+  printf 'gridora image provisioning failed at line %s (exit %s): %s\n' \
+    "${failed_line}" "${status}" "${failed_command}" >&2
+  exit "${status}"
+}
+
+trap report_failure ERR
+
 test -n "${GRIDORA_IMAGE_VERSION:-}"
 test -n "${GRIDORA_NODE_VERSION:-}"
 [[ "${GRIDORA_SOURCE_COMMIT:-}" =~ ^[a-f0-9]{40}$ ]]
