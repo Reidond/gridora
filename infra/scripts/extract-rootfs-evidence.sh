@@ -16,9 +16,8 @@ command -v "${virt_tar_out}" >/dev/null || { echo "virt-tar-out is required" >&2
 umask 077
 work=$(mktemp -d)
 trap 'rm -rf "${work}"' EXIT
-rootfs_directory="${work}/rootfs"
 archive_listing="${work}/rootfs.list"
-mkdir "${rootfs_directory}"
+status_file="${work}/dpkg-status"
 
 # libguestfs discovers the guest root read-only and writes a filesystem archive.
 # Scanning the QCOW2 itself can silently catalogue no guest packages; this archive
@@ -33,10 +32,14 @@ else
   echo "rootfs archive contains an unsafe path" >&2
   exit 1
 fi
-"${tar_command}" --extract --file "${rootfs_archive}" --directory "${rootfs_directory}" \
-  --no-same-owner --no-same-permissions
-status_file=$(find "${rootfs_directory}" -type f -path '*/var/lib/dpkg/status' -print -quit)
-[[ -n "${status_file}" && -s "${status_file}" ]]
+status_path_count=$(awk '$0 ~ "(^|/)var/lib/dpkg/status$" { count += 1 } END { print count + 0 }' "${archive_listing}")
+[[ "${status_path_count}" == 1 ]]
+status_path=$(awk '$0 ~ "(^|/)var/lib/dpkg/status$" { print; exit }' "${archive_listing}")
+[[ -n "${status_path}" ]]
+# Stream only the package database. Extracting an otherwise valid guest rootfs
+# as an unprivileged runner would try to recreate device nodes such as /dev/null.
+"${tar_command}" --extract --to-stdout --file "${rootfs_archive}" -- "${status_path}" >"${status_file}"
+[[ -s "${status_file}" ]]
 package_count=$(awk '/^Package: / { count += 1 } END { print count + 0 }' "${status_file}")
 [[ "${package_count}" =~ ^[1-9][0-9]*$ ]]
 

@@ -3849,3 +3849,35 @@ directory /lib/modules/6.17.0-1022-azure`. Step 116 installs the matching
 - Blocker: Run 32766678178 produced no accepted artifact. Do not tag or release
   until the replacement run completes the evidence and smoke lanes.
 - Decision: ADR 0098.
+
+## Step 124: Stream package evidence without recreating device nodes
+
+- Status: local
+- Situation: Owner-approved exact-main run 32769230700 passed the libguestfs
+  preflight, built and validated the Ubuntu QCOW2, and exported its rootfs. The
+  evidence script then failed because full unprivileged extraction tried to
+  recreate legitimate guest device nodes such as `/dev/null` and Docker's
+  `backingFsBlockDev`.
+- Task: Read the guest package inventory without host root or `CAP_MKNOD`, while
+  preserving the complete archive as mandatory supply-chain evidence.
+- Action: Validate the archive listing, require exactly one
+  `var/lib/dpkg/status` member, and stream only that file for package counting.
+  Keep the complete rootfs archive as the SBOM, vulnerability-scan, checksum,
+  signature, and promotion input. Add a regression fixture containing a real
+  `/dev/null` device entry.
+- Result: The unprivileged evidence lane does not recreate guest special files,
+  while missing, duplicate, empty, or malformed package inventories still fail
+  closed.
+- Evidence: `infra/scripts/extract-rootfs-evidence.sh`,
+  `tests/infrastructure/image-artifact-evidence.test.ts`, failed protected run
+  32769230700, and ADR 0099.
+- Verification: Require Bash parsing, ShellCheck, focused
+  artifact/image/documentation tests, the complete repository gate,
+  pull-request CI and Security, then a new owner-approved exact-main build and
+  separately approved simulated provider smoke. Bash and ShellCheck pass, and
+  the focused records pass 26 tests. The complete local gate reports 904
+  correctly formatted files, zero lint or type errors across 522 files, 226
+  passing test files with 1,501 passing tests, and 112 successful builds.
+- Blocker: Run 32769230700 produced no accepted artifact. Do not tag or release
+  until the replacement run completes the evidence and smoke lanes.
+- Decision: ADR 0099.
