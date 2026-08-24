@@ -141,6 +141,14 @@ describe('node image assets', () => {
     )
   })
 
+  it('creates the journald drop-in directory before installing its policy', () => {
+    const provision = asset('infra/packer/scripts/provision.sh')
+    const directory = '/etc/systemd/journald.conf.d /opt/gridora'
+    const policy = '/etc/systemd/journald.conf.d/60-gridora.conf'
+    expect(provision).toContain(directory)
+    expect(provision.indexOf(directory)).toBeLessThan(provision.indexOf(policy))
+  })
+
   it('removes the ephemeral Packer SSH key', () => {
     const packer = asset('infra/packer/gridora-node.pkr.hcl')
     expect(packer).toContain('rm -f /home/gridora/.ssh/authorized_keys')

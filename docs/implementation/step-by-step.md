@@ -3719,3 +3719,36 @@ directory /lib/modules/6.17.0-1022-azure`. Step 116 installs the matching
   provisioning or credential removal. Do not tag or release until offline image
   inspection and signed artifact evidence pass.
 - Decision: ADR 0094.
+
+## Step 120: Create the minimal guest journald drop-in directory
+
+- Status: local
+- Situation: Protected exact-main run 32756319958 passed autoinstall, SSH,
+  private upload, noninteractive root elevation, package installation, Docker
+  setup, and every pinned checksum. The provisioner then failed inside the
+  first complete immutable-configuration pass. An amd64 Ubuntu reproduction
+  proved the Node and signed update-state span, then exposed that the minimal
+  guest does not guarantee `/etc/systemd/journald.conf.d` before Gridora writes
+  its logging drop-in there.
+- Task: Remove the undeclared filesystem precondition without weakening or
+  relocating the immutable journald policy.
+- Action: Add `/etc/systemd/journald.conf.d` to the root-owned mode-0755
+  directory-creation step and require the image contract test to prove that
+  creation occurs before `60-gridora.conf` is installed.
+- Result: Minimal Ubuntu guests receive the fixed root-owned logging policy
+  deterministically instead of depending on an optional package-created
+  directory.
+- Evidence: `infra/packer/scripts/provision.sh`,
+  `tests/image/image-assets.test.ts`, failed protected run 32756319958, amd64
+  Ubuntu 24.04 provisioner reproductions, and ADR 0095.
+- Verification: Require Packer formatting and validation, focused image and
+  documentation tests, the complete repository gate, pull-request CI and
+  Security, then a new exact-main protected build and separately approved
+  simulated provider smoke. Packer 1.14.2 formatting and validation pass with
+  QEMU plugin 1.1.6, the focused records pass 20 tests, and the complete local
+  gate reports 900 correctly formatted files, zero lint or type errors across
+  522 files, 226 passing test files with 1,499 passing tests, and 112 successful
+  builds.
+- Blocker: The prior run remains diagnostic only. Do not tag or release until a
+  replacement run produces and validates the signed QCOW2 artifact.
+- Decision: ADR 0095.
