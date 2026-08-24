@@ -206,6 +206,8 @@ jobs:
           docker run --rm --privileged --user 0:0 -v "$PWD:/workspace:ro" \
             gridora-node-validation:ci \
             /workspace/infra/scripts/validate-firewall-docker-networking.sh
+          sudo modprobe quota_v2
+          test -d /sys/module/quota_v2
           sudo unshare --mount --propagation private \
             bash infra/scripts/validate-project-quota.sh
       - name: Exercise the packaged bootstrap and execution renderer
@@ -260,6 +262,8 @@ jobs:
           docker run --rm --privileged --user 0:0 -v "$PWD:/workspace:ro" \
             gridora-node-validation:ci \
             /workspace/infra/scripts/validate-firewall-docker-networking.sh
+          sudo modprobe quota_v2
+          test -d /sys/module/quota_v2
           sudo unshare --mount --propagation private \
             bash infra/scripts/validate-project-quota.sh
       - uses: anchore/sbom-action/download-syft@f8bdd1d8ac5e901a77a92f111440fdb1b593736b # v0.20.6

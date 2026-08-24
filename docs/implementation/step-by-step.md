@@ -3554,7 +3554,37 @@ system call failed: No such process.` Step 114 moves only this quota proof to
 - Verification: Bash syntax, ShellCheck, the image-asset contract test, local
   Docker quota enforcement, and the complete repository gate must pass. Pull
   request 9 must then pass the native Ubuntu `validate` job before merge.
-- Blocker: Merge only after that proof is green, then rerun the exact main image
-  workflow, approve signing and simulated smoke, and complete the protected
-  semantic release.
+- Blocker: Pull request 9 run 32743694394 reached the host mount boundary but
+  returned the same `ESRCH` because Ubuntu's version-2 quota format module was
+  not loaded. Step 115 loads and verifies that module before the proof. The
+  image, smoke, tag, and release remain.
 - Decision: ADR 0089.
+
+## Step 115: Load the hosted kernel's quota format before mounting
+
+- Status: local
+- Situation: Pull request 9 run 32743694394 moved the proof onto the Ubuntu host
+  and attached its loop device, but ext4 again returned `No such process` while
+  mounting the quota-enabled filesystem. Linux returns `ESRCH` when a filesystem
+  enables version-2 quota metadata before the `quota_v2` format module is loaded.
+  Local Docker succeeded because its Linux host had already loaded that module.
+- Task: Make the hosted kernel's quota-format dependency explicit and keep the
+  filesystem mount plus hard-limit rejection as the authoritative proof.
+- Action: Before each private mount-namespace proof, run `modprobe quota_v2` as
+  root and require `/sys/module/quota_v2` to exist. Do this in both public pull-
+  request validation and the owner-approved protected image build.
+- Result: A missing kernel quota module fails with a precise dependency error.
+  A present module is not sufficient by itself: the workflow must still create
+  and mount the ext4 filesystem, read back the exact project limit, and observe
+  the oversized unprivileged write fail.
+- Evidence: `.github/workflows/image.yml`,
+  `tests/image/image-assets.test.ts`, failed pull-request run 32743694394, Linux
+  quota format-module behavior, and ADR 0090.
+- Verification: The image-asset test requires two explicit module loads, two
+  sysfs assertions, and two private host quota proofs. The focused tests and
+  complete repository gate must pass, then pull request 9 must prove the path
+  on GitHub's Ubuntu 24.04 runner before merge.
+- Blocker: Merge only after the native proof is green, rerun the exact main image
+  workflow, approve signing and simulated smoke, then complete the protected
+  semantic release.
+- Decision: ADR 0090.

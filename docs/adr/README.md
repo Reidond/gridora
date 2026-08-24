@@ -118,3 +118,5 @@ Rejected.
   ADR 0089 supersedes its quota-container execution boundary.
 - ADR 0089 runs the project-quota proof on the ephemeral Ubuntu host inside a
   private mount namespace while retaining the containerized firewall proof.
+- ADR 0090 explicitly loads and verifies the hosted kernel's version-2 quota
+  format module before the private project-quota proof.
