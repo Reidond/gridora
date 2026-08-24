@@ -3881,3 +3881,33 @@ directory /lib/modules/6.17.0-1022-azure`. Step 116 installs the matching
 - Blocker: Run 32769230700 produced no accepted artifact. Do not tag or release
   until the replacement run completes the evidence and smoke lanes.
 - Decision: ADR 0099.
+
+## Step 125: Make protected image evidence failures stage-specific
+
+- Status: local
+- Situation: Owner-approved exact-main run 32771824710 built and validated the
+  QCOW2 but failed silently inside one combined evidence step. The log could not
+  distinguish rootfs inventory, SBOM, vulnerability policy, signing,
+  verification, or promotion-manifest assertions.
+- Task: Preserve every supply-chain gate while making failures independently
+  observable and actionable.
+- Action: Split the existing ordered sequence into named extraction, SBOM,
+  scan, sign-and-verify, and promotion-manifest Actions steps. Add bounded error
+  messages for silent package-inventory and SBOM invariants.
+- Result: GitHub records the exact failed boundary, later stages remain fenced,
+  and upload still occurs only after all evidence stages succeed. No scan,
+  identity, signature, or promotion rule is weakened.
+- Evidence: `.github/workflows/image.yml`,
+  `infra/scripts/extract-rootfs-evidence.sh`,
+  `infra/scripts/generate-sbom.sh`, `tests/image/image-assets.test.ts`, failed
+  protected run 32771824710, and ADR 0100.
+- Verification: Require Bash parsing, ShellCheck, focused
+  artifact/image/documentation tests, the complete repository gate,
+  pull-request CI and Security, then a new owner-approved exact-main build and
+  separately approved simulated provider smoke. Bash and ShellCheck pass, and
+  the focused records pass 27 tests. The complete local gate reports 905
+  correctly formatted files, zero lint or type errors across 522 files, 226
+  passing test files with 1,502 passing tests, and 112 successful builds.
+- Blocker: Run 32771824710 produced no accepted artifact. Do not tag or release
+  until the replacement run completes every evidence and smoke lane.
+- Decision: ADR 0100.

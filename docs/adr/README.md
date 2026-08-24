@@ -138,3 +138,5 @@ Rejected.
   and proves the read-only extraction appliance before the QCOW2 build starts.
 - ADR 0099 streams only the unique package database from the guest archive while
   retaining the complete rootfs as the scan, checksum, and signature evidence.
+- ADR 0100 makes every protected image evidence boundary independently visible
+  while preserving its fail-closed order and artifact-upload fence.

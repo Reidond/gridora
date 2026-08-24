@@ -50,6 +50,21 @@ describe('node image assets', () => {
     expect(workflow).toContain('Prove privileged node kernel boundaries on the hosted runner')
   })
 
+  it('keeps each protected image evidence boundary independently observable', () => {
+    const workflow = asset('.github/workflows/image.yml')
+    const stages = [
+      'Extract rootfs evidence',
+      'Generate rootfs SBOM',
+      'Scan rootfs archive',
+      'Sign and verify the QCOW2 artifact',
+      'Create the image promotion manifest',
+    ]
+    const indexes = stages.map((stage) => workflow.indexOf(`- name: ${stage}`))
+    expect(indexes.every((index) => index >= 0)).toBe(true)
+    expect(indexes).toEqual([...indexes].sort((left, right) => left - right))
+    expect(workflow).not.toContain('- name: Create and scan supply-chain evidence')
+  })
+
   it('hardens the agent systemd unit', () => {
     const unit = asset('infra/images/systemd/gridora-agent.service')
     expect(unit).toContain('NoNewPrivileges=true')
