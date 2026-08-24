@@ -3788,3 +3788,35 @@ directory /lib/modules/6.17.0-1022-azure`. Step 116 installs the matching
   an exact-main replacement produces, inspects, scans, signs, and uploads the
   QCOW2 artifact and the protected simulated smoke succeeds.
 - Decision: ADR 0096.
+
+## Step 122: Install fixed unit executables before verification
+
+- Status: local
+- Situation: Owner-approved exact-main run 32764415965 accepted the signed
+  baseline update manifest and advanced to systemd verification. The verifier
+  rejected the plugin-egress network and lease units because their fixed
+  `/usr/local/libexec/gridora` helpers were installed later, even though the
+  containerized unit lane already verifies the same units with those helpers
+  present.
+- Task: Give the real guest verifier the complete immutable filesystem contract
+  without weakening any unit or execution policy.
+- Action: Move the unchanged `systemd-analyze verify` command after all fixed
+  unit helper installations and require both plugin-egress helper paths to
+  precede verification in the image contract test.
+- Result: The guest verifies units only after every referenced executable exists
+  with its final mode and path. Missing or invalid executables continue to fail
+  closed.
+- Evidence: `infra/packer/scripts/provision.sh`,
+  `tests/image/image-assets.test.ts`, failed exact-main run 32764415965, and ADR 0097.
+- Verification: Require Bash parsing, ShellCheck, focused image and
+  documentation tests, Packer 1.14.2 formatting and validation with QEMU plugin
+  1.1.6, the complete repository gate, pull-request CI and Security, then a new
+  owner-approved exact-main build and separately approved simulated provider
+  smoke. Bash, ShellCheck, and 22 focused tests pass locally. The complete gate
+  reports 902 correctly formatted files, zero lint or type errors across 522
+  files, 226 passing test files with 1,501 passing tests, and 112 successful
+  builds.
+- Blocker: Run 32764415965 created no artifact and is not release evidence. Do
+  not tag or release until the replacement run completes the image and smoke
+  lanes.
+- Decision: ADR 0097.

@@ -160,6 +160,17 @@ describe('node image assets', () => {
     expect(provision).not.toContain('.url | type == "string" and')
   })
 
+  it('installs unit executables before systemd verifies their units', () => {
+    const provision = asset('infra/packer/scripts/provision.sh')
+    const verify = 'systemd-analyze verify'
+    expect(provision.indexOf('gridora-plugin-egress-network /usr/local/libexec')).toBeLessThan(
+      provision.indexOf(verify),
+    )
+    expect(provision.indexOf('gridora-plugin-egress-lease /usr/local/libexec')).toBeLessThan(
+      provision.indexOf(verify),
+    )
+  })
+
   it('removes the ephemeral Packer SSH key', () => {
     const packer = asset('infra/packer/gridora-node.pkr.hcl')
     expect(packer).toContain('rm -f /home/gridora/.ssh/authorized_keys')

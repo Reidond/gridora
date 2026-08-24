@@ -212,14 +212,6 @@ sudo install -m 0644 /tmp/gridora-image/systemd/gridora-tunnel-installer.socket 
 sudo install -m 0644 /tmp/gridora-image/systemd/cloudflared.service /etc/systemd/system/cloudflared.service
 sudo install -m 0644 /tmp/gridora-image/systemd/gridora-recovery.service /etc/systemd/system/gridora-recovery.service
 sudo install -m 0644 /tmp/gridora-image/systemd/traefik.service /etc/systemd/system/traefik.service
-sudo systemd-analyze verify \
-  /etc/systemd/system/gridora-agent.service \
-  /etc/systemd/system/gridora-agent-update-setup.service \
-  /etc/systemd/system/gridora-agent-update.service \
-  /etc/systemd/system/gridora-agent-update.socket \
-  /etc/systemd/system/gridora-plugin-egress-network.service \
-  /etc/systemd/system/gridora-plugin-egress-lease.socket \
-  /etc/systemd/system/gridora-plugin-egress-lease@.service
 sudo install -m 0644 /tmp/gridora-image/nftables/gridora.nft /etc/nftables.conf
 sudo install -m 0644 /tmp/gridora-image/journald/60-gridora.conf /etc/systemd/journald.conf.d/60-gridora.conf
 sudo install -m 0644 /tmp/gridora-image/traefik/traefik.yaml /etc/traefik/traefik.yaml
@@ -231,6 +223,14 @@ sudo install -m 0755 /tmp/gridora-image/gridora-firewall-observation /usr/local/
 sudo install -m 0755 /tmp/gridora-image/gridora-plugin-egress-network /usr/local/libexec/gridora/gridora-plugin-egress-network
 sudo install -m 0755 /tmp/gridora-image/gridora-plugin-egress-lease /usr/local/libexec/gridora/gridora-plugin-egress-lease
 sudo install -m 0755 /tmp/gridora-image/validate-cloudflared-token /usr/local/libexec/gridora/validate-cloudflared-token
+sudo systemd-analyze verify \
+  /etc/systemd/system/gridora-agent.service \
+  /etc/systemd/system/gridora-agent-update-setup.service \
+  /etc/systemd/system/gridora-agent-update.service \
+  /etc/systemd/system/gridora-agent-update.socket \
+  /etc/systemd/system/gridora-plugin-egress-network.service \
+  /etc/systemd/system/gridora-plugin-egress-lease.socket \
+  /etc/systemd/system/gridora-plugin-egress-lease@.service
 printf '%s\n' "${GRIDORA_IMAGE_VERSION}" | sudo tee /etc/gridora/image-version >/dev/null
 sudo install -o root -g root -m 0444 /tmp/gridora-image-identity.json /etc/gridora/image-identity.json
 sudo install -o root -g root -m 0444 /tmp/gridora-image-identity.sig /etc/gridora/image-identity.sig
