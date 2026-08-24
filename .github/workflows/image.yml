@@ -275,7 +275,8 @@ jobs:
           sudo unshare --mount --propagation private \
             bash infra/scripts/validate-project-quota.sh
       - uses: anchore/sbom-action/download-syft@f8bdd1d8ac5e901a77a92f111440fdb1b593736b # v0.20.6
-      - uses: anchore/scan-action/download-grype@e1165082ffb1fe366ebaf02d8526e7c4989ea9d2 # v7
+      - id: download-grype
+        uses: anchore/scan-action/download-grype@e1165082ffb1fe366ebaf02d8526e7c4989ea9d2 # v7
       - uses: sigstore/cosign-installer@d7543c93d881b35a8faa02e8e3605f69b7a1ce62 # v3.10.0
       - name: Build the agent from the reviewed commit
         run: |
@@ -506,7 +507,10 @@ jobs:
       - name: Scan rootfs archive
         run: |
           set -o pipefail
-          infra/scripts/scan-artifact.sh "$IMAGE_PATH.rootfs.tar" | tee "$IMAGE_PATH.scan.log"
+          infra/scripts/scan-artifact.sh \
+            "$IMAGE_PATH.rootfs.tar" \
+            "${{ steps.download-grype.outputs.cmd }}" \
+            | tee "$IMAGE_PATH.scan.log"
       - name: Sign and verify the QCOW2 artifact
         run: |
           infra/scripts/sign-artifact.sh "$IMAGE_PATH"

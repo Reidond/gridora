@@ -142,3 +142,5 @@ Rejected.
   while preserving its fail-closed order and artifact-upload fence.
 - ADR 0101 scopes the authoritative package inventory to the guest root and
   excludes nested container-layer package databases with the same suffix.
+- ADR 0102 passes the pinned Grype download action's declared command path into
+  the fail-closed rootfs vulnerability scanner.
