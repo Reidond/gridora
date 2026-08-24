@@ -3752,3 +3752,39 @@ directory /lib/modules/6.17.0-1022-azure`. Step 116 installs the matching
 - Blocker: The prior run remains diagnostic only. Do not tag or release until a
   replacement run produces and validates the signed QCOW2 artifact.
 - Decision: ADR 0095.
+
+## Step 121: Scope signed agent manifest validation in the guest
+
+- Status: local
+- Situation: Owner-approved exact-main run 32759392984 reached the real Ubuntu
+  provisioner and failed after every pinned checksum. Diagnostic run
+  32761299089 identified the monolithic signed agent-update manifest assertion.
+  Protected safe-shape run 32762605028 proved that the manifest's allowlisted
+  keys, types, sequence, epoch, timestamp, signature encoding, checksum, HTTPS
+  source, and compatibility values were valid. The remaining defect was the
+  assertion's ambiguous nested `jq` pipe scope.
+- Task: Preserve the strict signed-manifest boundary while making its execution
+  deterministic and its failures diagnosable.
+- Action: Parenthesize the `source` and `compatibility` object scopes, split
+  every type, equality, range, and format check into an explicit assertion,
+  rename the top-level allowlist variable, and report the exact failed guest
+  line and command through a ShellCheck-clean `ERR` trap.
+- Result: The guest evaluates valid signed manifests without scope ambiguity and
+  continues to reject unknown fields, wrong types, non-integral counters,
+  checksum or compatibility mismatches, invalid source URLs, and malformed
+  signatures. Future failures identify their exact non-secret command.
+- Evidence: `infra/packer/scripts/provision.sh`,
+  `tests/image/image-assets.test.ts`, exact-main failed run 32759392984,
+  diagnostic run 32761299089, safe-shape diagnostic run 32762605028, and ADR 0096.
+- Verification: Require Bash parsing, ShellCheck, focused image and
+  documentation tests, Packer 1.14.2 formatting and validation with QEMU plugin
+  1.1.6, the complete repository gate, pull-request CI and Security, then a new
+  owner-approved exact-main image build and separately approved simulated
+  provider smoke. Bash, ShellCheck, the 21 focused tests, and Packer validation
+  pass locally. The complete gate reports 901 correctly formatted files, zero
+  lint or type errors across 522 files, 226 passing test files with 1,500
+  passing tests, and 112 successful builds.
+- Blocker: Diagnostic runs are not release evidence. Do not tag or release until
+  an exact-main replacement produces, inspects, scans, signs, and uploads the
+  QCOW2 artifact and the protected simulated smoke succeeds.
+- Decision: ADR 0096.

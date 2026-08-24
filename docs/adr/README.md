@@ -130,3 +130,5 @@ Rejected.
   temporary sudo grant and removes it with the build key before shutdown.
 - ADR 0095 creates the journald drop-in directory explicitly before installing
   the immutable node logging policy into a minimal Ubuntu guest.
+- ADR 0096 scopes every signed agent-update manifest assertion explicitly and
+  makes guest provisioner failures report their exact non-secret command.
