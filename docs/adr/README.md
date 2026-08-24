@@ -132,3 +132,5 @@ Rejected.
   the immutable node logging policy into a minimal Ubuntu guest.
 - ADR 0096 scopes every signed agent-update manifest assertion explicitly and
   makes guest provisioner failures report their exact non-secret command.
+- ADR 0097 installs every fixed unit executable before the real Ubuntu guest
+  runs systemd verification against the immutable unit set.
