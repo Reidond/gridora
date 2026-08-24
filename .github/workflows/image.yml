@@ -202,7 +202,8 @@ jobs:
       - name: Prove privileged node kernel boundaries on the hosted runner
         run: |
           sudo apt-get update
-          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends quota
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            quota "linux-modules-extra-$(uname -r)"
           docker run --rm --privileged --user 0:0 -v "$PWD:/workspace:ro" \
             gridora-node-validation:ci \
             /workspace/infra/scripts/validate-firewall-docker-networking.sh
@@ -252,7 +253,8 @@ jobs:
         run: |
           sudo apt-get update
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-            libguestfs-tools qemu-system-x86 qemu-utils quota
+            libguestfs-tools qemu-system-x86 qemu-utils quota \
+            "linux-modules-extra-$(uname -r)"
       - name: Prove privileged node kernel boundaries on the KVM runner
         run: |
           docker build \

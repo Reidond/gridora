@@ -3584,7 +3584,38 @@ system call failed: No such process.` Step 114 moves only this quota proof to
   sysfs assertions, and two private host quota proofs. The focused tests and
   complete repository gate must pass, then pull request 9 must prove the path
   on GitHub's Ubuntu 24.04 runner before merge.
+- Blocker: Pull request 9 run 32744210002 reported `Module quota_v2 not found in
+directory /lib/modules/6.17.0-1022-azure`. Step 116 installs the matching
+  Ubuntu extra-module package before the explicit load. The image, smoke, tag,
+  and release remain.
+- Decision: ADR 0090.
+
+## Step 116: Install the runner kernel's matching quota module package
+
+- Status: local
+- Situation: Pull request 9 run 32744210002 proved that the Ubuntu runner's base
+  module set does not include `quota_v2` for its exact Azure kernel. The explicit
+  load failed before any filesystem mount, which replaced the ambiguous `ESRCH`
+  with the real missing-package boundary.
+- Task: Supply the stock Ubuntu quota format module that matches the running
+  ephemeral kernel without pinning a stale kernel release or bypassing the
+  behavioral quota proof.
+- Action: After `apt-get update`, install `linux-modules-extra-$(uname -r)` with
+  `--no-install-recommends` alongside the `quota` userspace package. Use the same
+  exact-running-kernel expression in public validation and the protected image
+  build. Then require `modprobe quota_v2` and its sysfs entry before mounting.
+- Result: The proof follows GitHub's current Ubuntu Azure kernel instead of
+  assuming its optional modules are preinstalled. Package installation affects
+  only the ephemeral runner, is credential-free, and still cannot pass without
+  the exact project-ID, hard-limit readback, and rejected oversized write.
+- Evidence: `.github/workflows/image.yml`,
+  `tests/image/image-assets.test.ts`, failed pull-request run 32744210002, and
+  ADR 0091.
+- Verification: The image-asset test requires two matching-kernel package
+  installations, two module loads, two sysfs assertions, and two private quota
+  executions. Focused tests and the complete repository gate must pass, then
+  pull request 9 must prove quota enforcement on GitHub's Ubuntu runner.
 - Blocker: Merge only after the native proof is green, rerun the exact main image
   workflow, approve signing and simulated smoke, then complete the protected
   semantic release.
-- Decision: ADR 0090.
+- Decision: ADR 0091.

@@ -120,3 +120,5 @@ Rejected.
   private mount namespace while retaining the containerized firewall proof.
 - ADR 0090 explicitly loads and verifies the hosted kernel's version-2 quota
   format module before the private project-quota proof.
+- ADR 0091 installs the matching Ubuntu extra-module package on the disposable
+  runner before it loads the quota format module.

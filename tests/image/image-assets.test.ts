@@ -34,6 +34,7 @@ describe('node image assets', () => {
     expect(workflow.match(/sudo unshare --mount --propagation private/g)).toHaveLength(2)
     expect(workflow.match(/sudo modprobe quota_v2/g)).toHaveLength(2)
     expect(workflow.match(/test -d \/sys\/module\/quota_v2/g)).toHaveLength(2)
+    expect(workflow.match(/linux-modules-extra-\$\(uname -r\)/g)).toHaveLength(2)
     expect(workflow).toContain('libguestfs-tools qemu-system-x86 qemu-utils quota')
     expect(workflow).not.toMatch(
       /gridora-node-validation:ci \\\n\s+\/workspace\/infra\/scripts\/validate-project-quota\.sh/,
