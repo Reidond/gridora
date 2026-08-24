@@ -134,3 +134,5 @@ Rejected.
   makes guest provisioner failures report their exact non-secret command.
 - ADR 0097 installs every fixed unit executable before the real Ubuntu guest
   runs systemd verification against the immutable unit set.
+- ADR 0098 makes the ephemeral signing runner's kernel readable to libguestfs
+  and proves the read-only extraction appliance before the QCOW2 build starts.
