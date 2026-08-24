@@ -407,6 +407,6 @@ BEGIN
         AND receipt_id = NEW.id
     )
     AND upload_lease_expires_at > NEW.accepted_at;
-  SELECT CASE WHEN changes() = 1 THEN 1
-    ELSE RAISE(ABORT, 'telemetry receipt lost its active upload lease') END;
+  SELECT RAISE(ABORT, 'telemetry receipt lost its active upload lease')
+  WHERE changes() <> 1;
 END;

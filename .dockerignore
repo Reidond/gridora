@@ -1,0 +1,11 @@
+.git
+.gridora
+.nuxt
+.output
+.playwright-mcp
+.wrangler
+**/coverage
+**/dist
+**/node_modules
+node_modules
+test-results

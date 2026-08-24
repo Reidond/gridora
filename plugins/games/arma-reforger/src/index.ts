@@ -322,7 +322,7 @@ const steamPlan = (root: string): Effect.Effect<ExecutablePlan, PluginAgentError
   Effect.try({
     try: () => {
       const plan = createSteamAppPlan({
-        installRoot: root,
+        installRoot: `${root}/game`,
         appId: manifest.steam.appId,
         validate: true,
         operation: 'update',
@@ -375,7 +375,7 @@ export const agent: AgentFacet<ArmaConfig> = {
     validRoot(root) && validRoot(configRoot)
       ? Effect.succeed({
           executable: 'ArmaReforgerServer',
-          arguments: ['-config', `${configRoot}/server.json`, '-profile', `${root}/profile`],
+          arguments: ['-config', `${configRoot}/config/server.json`, '-profile', `${root}/profile`],
           workingDirectory: root,
           environment: {},
           timeoutSeconds: 30,
@@ -459,7 +459,7 @@ export const runtime: LocalPluginRuntimeFacet = {
               '--plugin',
               manifest.id,
               '--path',
-              `${configRoot}/server.json`,
+              `${configRoot}/config/server.json`,
             ],
             workingDirectory: root,
             environment: {},

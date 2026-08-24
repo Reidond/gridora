@@ -108,3 +108,5 @@ Rejected.
   containers, ports, DNS, Tunnels, and R2 backup objects.
 - ADR 0084 defines reproducible clean-runner release evidence, cross-platform
   dependency locks, and reviewer-gated publication boundaries.
+- ADR 0085 defines the disposable Docker VPS and Arma simulation boundary,
+  environment-isolated Cloudflare resources, and protected production ingress.

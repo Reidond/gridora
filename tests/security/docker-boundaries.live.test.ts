@@ -150,6 +150,9 @@ describe.skipIf(!liveDocker)('live Docker workload boundary', () => {
       expect(container.HostConfig.PortBindings['8080/tcp']).toEqual([
         expect.objectContaining({ HostIp: '127.0.0.1' }),
       ])
+      // This fixture proves the stricter isolated-job boundary. Game-server
+      // bridges are non-internal and are covered by the VPS simulation with
+      // Gridora's default-deny nftables forward policy loaded.
       expect(network.Internal).toBe(true)
       expect(network.Attachable).toBe(false)
 

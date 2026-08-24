@@ -15,7 +15,7 @@ concurrency:
 jobs:
   verify:
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
       - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
@@ -42,6 +42,8 @@ jobs:
         env:
           GRIDORA_LIVE_DOCKER_SECURITY: '1'
         run: pnpm exec vitest run tests/security/docker-boundaries.live.test.ts
+      - name: Exercise the Arma Reforger lifecycle on a simulated VPS
+        run: pnpm test:arma-sim
       - name: Validate Worker bundles without deployment
         run: |
           while IFS= read -r config; do

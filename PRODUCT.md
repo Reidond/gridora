@@ -67,14 +67,14 @@ or a guided web wizard, without manually:
 │ Cloudflare                                                            │
 │                                                                       │
 │  Public web routes                                                    │
-│      ├── app.gridora.example/sign-in ── authentication entry page       │
-│      └── app.gridora.example/sign-up ── registration entry page         │
+│      ├── gridora.coasts.red/sign-in ── authentication entry page        │
+│      └── gridora.coasts.red/sign-up ── registration entry page          │
 │                                                                       │
 │  Cloudflare Access                                                    │
 │      │                                                                │
-│      ├── console.gridora.example ── authenticated Nuxt dashboard       │
-│      ├── api.gridora.example ───── Hono Worker + Effect application    │
-│      └── *.mgmt.gridora.example ── Access-protected Tunnel origins     │
+│      ├── console.gridora.coasts.red ─ authenticated Nuxt dashboard     │
+│      ├── api.gridora.coasts.red ───── Hono Worker + Effect application │
+│      └── *.mgmt.gridora.coasts.red ─ Access-protected Tunnel origins   │
 │                                                                       │
 │  Durable Objects     Workflows       Queues                           │
 │  - node sessions     - provision     - agent events                   │
@@ -938,7 +938,7 @@ spec:
       memoryMiB: 8192
       diskGiB: 80
   endpoint:
-    hostname: eastern-front.night-watch.games.gridora.example
+    hostname: eastern-front.night-watch.games.gridora.coasts.red
   updatePolicy:
     mode: manual
     backupBeforeUpdate: true
@@ -1752,7 +1752,7 @@ Each node receives one remotely managed Cloudflare Tunnel.
 Suggested hostname:
 
 ```text
-node-<node-id>.mgmt.gridora.example
+node-<node-id>.mgmt.gridora.coasts.red
 ```
 
 The Tunnel exposes only the node-agent HTTP/WebSocket service on loopback or a private Docker network.
@@ -1782,14 +1782,14 @@ Cloudflare Spectrum is an optional future capability, not a dependency.
 Example:
 
 ```text
-eastern-front.night-watch.games.gridora.example  A  203.0.113.10  DNS only
+eastern-front.night-watch.games.gridora.coasts.red  A  203.0.113.10  DNS only
 ```
 
 On a shared node:
 
 ```text
-server-a.night-watch.games.gridora.example → 203.0.113.10:2001/udp
-server-b.night-watch.games.gridora.example → 203.0.113.10:2101/udp
+server-a.night-watch.games.gridora.coasts.red → 203.0.113.10:2001/udp
+server-b.night-watch.games.gridora.coasts.red → 203.0.113.10:2101/udp
 ```
 
 DNS itself does not encode those ports. The UI and CLI must always expose the actual connection address.
@@ -1958,7 +1958,7 @@ Technology:
 - generated API client;
 - build-time plugin UI registry.
 
-The public authentication shell may be hosted at `app.gridora.example`. The authenticated application is hosted at `console.gridora.example` and protected by Cloudflare Access. Public sign-in and sign-up calls-to-action redirect to an Access-protected completion route carrying a short-lived, integrity-protected intent value.
+The public authentication shell is hosted at `gridora.coasts.red`. The authenticated application is hosted at `console.gridora.coasts.red` and protected by Cloudflare Access. Public sign-in and sign-up calls-to-action redirect to an Access-protected completion route carrying a short-lived, integrity-protected intent value.
 
 Default dashboard rendering mode is a client-rendered private application served through Worker Assets. SSR is optional for public authentication routes or pages that materially benefit from it; general dashboard SEO is not a requirement.
 
@@ -2460,8 +2460,8 @@ A duplicate request returns the original operation unless the payload hash diffe
 Gridora provides two public routes:
 
 ```text
-https://app.gridora.example/sign-in
-https://app.gridora.example/sign-up
+https://gridora.coasts.red/sign-in
+https://gridora.coasts.red/sign-up
 ```
 
 The pages are native Gridora/Nuxt UI pages and must include product branding, legal links, loading/error states, and a clear distinction between returning-user sign-in and new-account sign-up. They do not collect or store passwords.
@@ -2470,7 +2470,7 @@ Both pages initiate Cloudflare Access authentication by redirecting to a protect
 
 ### 24.2 Access session and local identity bootstrap
 
-- Cloudflare Access protects `console.gridora.example` and `api.gridora.example`.
+- Cloudflare Access protects `console.gridora.coasts.red` and `api.gridora.coasts.red`.
 - Prefer one multi-domain Access application when both domains share policy.
 - Access policy may allow any user authenticated by an approved identity provider; Gridora membership and role checks remain the application authorization boundary.
 - The API validates `Cf-Access-Jwt-Assertion` and derives a stable external identity key from validated claims.
@@ -2506,7 +2506,7 @@ identity + multiple memberships
 The required first setup route is:
 
 ```text
-https://console.gridora.example/setup/organization
+https://console.gridora.coasts.red/setup/organization
 ```
 
 It is shown to authenticated users with no active membership and contains one primary form with:

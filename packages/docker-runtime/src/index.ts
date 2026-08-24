@@ -174,6 +174,11 @@ export const dockerCreateBody = (plan: DockerContainerPlan): Readonly<Record<str
   Image: plan.image,
   User: plan.user,
   Labels: plan.labels,
+  // The Engine API requires the exposed-port declaration alongside
+  // HostConfig.PortBindings before it will program the published-port DNAT.
+  ExposedPorts: Object.fromEntries(
+    plan.ports.map((port) => [`${port.target}/${port.protocol}`, {}]),
+  ),
   HostConfig: {
     Privileged: false,
     ReadonlyRootfs: plan.readOnlyRootFilesystem,
@@ -204,7 +209,10 @@ export const dockerNetworkCreateBody = (
 ): Readonly<Record<string, unknown>> => ({
   Name: plan.network,
   CheckDuplicate: true,
-  Internal: true,
+  // Docker does not install working DNAT rules for published game ports on an
+  // internal bridge. The host nftables forward chain remains the authority:
+  // only leased player ports and explicitly leased egress tuples are accepted.
+  Internal: false,
   Attachable: false,
   Labels: plan.labels,
 })
@@ -319,7 +327,7 @@ export const canAdoptNetwork = (
   inspected: Readonly<Record<string, unknown>>,
   plan: DockerContainerPlan,
 ): boolean =>
-  inspected.Internal === true &&
+  inspected.Internal === false &&
   inspected.Attachable === false &&
   labelsMatch(inspected.Labels, plan.labels)
 
@@ -329,7 +337,8 @@ export const canAdoptContainer = (
 ): boolean => {
   const config = inspected.Config
   const hostConfig = inspected.HostConfig
-  const expectedHostConfig = dockerCreateBody(plan).HostConfig
+  const expectedBody = dockerCreateBody(plan)
+  const expectedHostConfig = expectedBody.HostConfig
   return (
     typeof config === 'object' &&
     config !== null &&
@@ -339,6 +348,8 @@ export const canAdoptContainer = (
     config.User === plan.user &&
     'Labels' in config &&
     labelsMatch(config.Labels, plan.labels) &&
+    'ExposedPorts' in config &&
+    JSON.stringify(config.ExposedPorts) === JSON.stringify(expectedBody.ExposedPorts) &&
     typeof hostConfig === 'object' &&
     hostConfig !== null &&
     typeof expectedHostConfig === 'object' &&

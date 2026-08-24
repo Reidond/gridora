@@ -6,6 +6,11 @@ deployment. The renderer replaces every D1, R2, Queue, Workflow, Durable
 Object, service, Access, DNS, sender, and Secrets Store placeholder with the
 reviewed value for that environment.
 
+Secrets Store names are environment-prefixed by the renderer. Staging and
+production therefore never share provider KEKs, Cloudflare automation tokens,
+or an agent command-signing private key merely because they use one account
+store.
+
 ```sh
 node infra/scripts/render-cloudflare-environment.mjs \
   --environment-file /protected/gridora-staging.json \
@@ -42,11 +47,11 @@ Every checked-in deployable Worker config sets `workers_dev: false` and
 Workers subdomain nor a version preview URL is an approved production ingress.
 Only rendered configs attach custom domains:
 
-| Rendered config                      | Exact custom domains                                                                                                   | Other public route |
-| ------------------------------------ | ---------------------------------------------------------------------------------------------------------------------- | ------------------ |
-| API template and API Worker          | `api.<environment>.gridora.example` (or `api.gridora.example` in production)                                           | None               |
-| Web Worker                           | `app.<environment>.gridora.example` and `console.<environment>.gridora.example` (without `.environment` in production) | None               |
-| Realtime, Workflows, Queue consumers | None                                                                                                                   | None               |
+| Rendered config                      | Exact custom domains                                                                                                                           | Other public route |
+| ------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------- | ------------------ |
+| API template and API Worker          | `api.staging.gridora.coasts.red` (or `api.gridora.coasts.red` in production)                                                                   | None               |
+| Web Worker                           | `staging.gridora.coasts.red` and `console.staging.gridora.coasts.red` (or `gridora.coasts.red` and `console.gridora.coasts.red` in production) | None               |
+| Realtime, Workflows, Queue consumers | None                                                                                                                                           | None               |
 
 The API and Web entries are Wrangler `custom_domain` routes, not wildcards.
 Realtime, Workflows, and Queue consumers remain service, Durable Object,
@@ -54,11 +59,13 @@ Workflow, Queue, or scheduled-event entrypoints and the renderer removes both
 `route` and `routes` from their output.
 
 `zoneName` in the renderer and `zone_name` in Terraform declare the managed
-zone. The required hostnames are exactly `api`, `app`, `console`, and `nodes`
-under that zone in production, or those labels followed by `.staging` in
-staging. Terraform validates the same four hostnames, including the DNS target,
-before planning. A staging file cannot substitute any production hostname or a
-hostname from another zone.
+zone. The production product namespace is `gridora.<zone>`: its public app is
+the namespace root, with `api`, `console`, and `nodes` below it. Staging inserts
+the environment label before `gridora`, producing `staging.gridora.<zone>` and
+the corresponding service names. Terraform validates the same four hostnames,
+including the DNS target, before planning. A staging file cannot substitute any
+production hostname or a hostname from another zone. The reviewed live values
+use the `coasts.red` zone and `gridora.coasts.red` production app.
 
 ## Terraform state
 
@@ -124,7 +131,7 @@ safe: the user must request a fresh plan before apply. Record only that the
 binding was set and rotated, never its value or an HMAC token.
 
 The Queue consumer has the `INVITATION_EMAIL` Email Sending binding. The binding
-can send only from `invitations@gridora.example` in the checked-in example. Replace
+can send only from `invitations@mail.gridora.coasts.red` in the checked-in example. Replace
 that address with one sender on the onboarded production domain. Do not add a
 Cloudflare API key. The Worker binding provides the restricted send capability.
 Invitation links use the public-app origin. They must not use the console origin

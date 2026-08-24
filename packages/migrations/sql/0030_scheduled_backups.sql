@@ -67,13 +67,14 @@ END;
 CREATE TRIGGER backup_schedule_dispatch_scope
 BEFORE INSERT ON backup_schedule_dispatches
 BEGIN
-  SELECT CASE WHEN NOT EXISTS (
+  SELECT RAISE(ABORT, 'backup_schedule_dispatch_scope')
+  WHERE NOT EXISTS (
     SELECT 1 FROM backup_schedules schedule
     WHERE schedule.organization_id = NEW.organization_id
       AND schedule.id = NEW.schedule_id
       AND schedule.server_id = NEW.server_id
       AND schedule.revision = NEW.schedule_revision
-  ) THEN RAISE(ABORT, 'backup_schedule_dispatch_scope') END;
+  );
 END;
 
 CREATE TABLE backup_restore_endpoint_receipts (

@@ -18,10 +18,11 @@ BEGIN
       OR (SELECT COUNT(*) FROM organization_memberships
           WHERE organization_id = NEW.organization_id AND role = 'owner' AND status = 'active') > 1
     );
-  SELECT CASE WHEN EXISTS (
+  SELECT RAISE(ABORT, 'organization membership leave fence failed')
+  WHERE EXISTS (
     SELECT 1 FROM organization_memberships
     WHERE organization_id = NEW.organization_id AND identity_id = NEW.identity_id
-  ) THEN RAISE(ABORT, 'organization membership leave fence failed') END;
+  );
   INSERT INTO outbox
     (id, organization_id, event_type, aggregate_type, aggregate_id, payload_json,
      publish_state, retry_count, available_at, created_at)

@@ -105,8 +105,8 @@ const d1DatabaseId = matches(
 const secretsStoreId = matches(
   'secretsStoreId',
   requiredString('secretsStoreId'),
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
-  'must be a lowercase Secrets Store UUID',
+  /^(?:[0-9a-f]{32}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/,
+  'must be a lowercase Secrets Store ID',
 )
 const zoneName = hostname('zoneName')
 const apiHostname = hostname('apiHostname')
@@ -116,16 +116,17 @@ const dnsTarget = hostname('dnsTarget')
 
 // A production deployment is reachable only on the reviewed custom domains.
 // The managed zone stays the same for both environments; staging is an
-// environment label directly below that zone. This makes it impossible for a
+// environment label inside the Gridora product namespace. This makes it impossible for a
 // staging input to point a rendered Worker or DNS binding at a production
 // hostname merely by supplying a syntactically-valid DNS name.
-const environmentHostname = (label) =>
-  environment === 'production' ? `${label}.${zoneName}` : `${label}.${environment}.${zoneName}`
+const productHostname = `gridora.${zoneName}`
+const environmentProductHostname =
+  environment === 'production' ? productHostname : `${environment}.${productHostname}`
 const expectedHostnames = {
-  apiHostname: environmentHostname('api'),
-  publicAppHostname: environmentHostname('app'),
-  consoleHostname: environmentHostname('console'),
-  dnsTarget: environmentHostname('nodes'),
+  apiHostname: `api.${environmentProductHostname}`,
+  publicAppHostname: environmentProductHostname,
+  consoleHostname: `console.${environmentProductHostname}`,
+  dnsTarget: `nodes.${environmentProductHostname}`,
 }
 const assertEnvironmentHostname = (name, value) => {
   if (value !== expectedHostnames[name])
@@ -156,7 +157,8 @@ const invitationEmailFrom = matches(
   /^[^\s@]+@[^\s@]+$/,
   'must be a valid sender email address',
 )
-if (!invitationEmailFrom.endsWith(`@${zoneName}`))
+const invitationEmailDomain = invitationEmailFrom.slice(invitationEmailFrom.lastIndexOf('@') + 1)
+if (invitationEmailDomain !== zoneName && !invitationEmailDomain.endsWith(`.${zoneName}`))
   fail('invitationEmailFrom must use the declared zoneName')
 const agentCommandSigningPublicKeyPem = requiredString('agentCommandSigningPublicKeyPem')
 if (!agentCommandSigningPublicKeyPem.includes('BEGIN PUBLIC KEY'))
@@ -301,7 +303,10 @@ const applyEnvironmentBindings = (config, sourceRelativePath) => {
     binding.name = resourceName(binding.name)
     if (binding.script_name !== undefined) binding.script_name = resourceName(binding.script_name)
   }
-  for (const binding of config.secrets_store_secrets ?? []) binding.store_id = secretsStoreId
+  for (const binding of config.secrets_store_secrets ?? []) {
+    binding.store_id = secretsStoreId
+    binding.secret_name = resourceName(binding.secret_name)
+  }
 
   if (config.vars !== undefined) {
     if ('ACCESS_ISSUER' in config.vars) config.vars.ACCESS_ISSUER = accessIssuer
