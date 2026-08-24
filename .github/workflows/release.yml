@@ -18,21 +18,22 @@ jobs:
     permissions:
       actions: read
       contents: read
+      pull-requests: read
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           fetch-depth: 0
           persist-credentials: false
           ref: ${{ github.sha }}
-      - name: Verify the remote tag and repository governance
+      - name: Verify the remote tag and merged main provenance
         env:
-          EVIDENCE_TOKEN: ${{ secrets.RELEASE_EVIDENCE_TOKEN }}
+          EVIDENCE_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
           TAG_NAME: ${{ github.ref_name }}
           TAG_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
-          : "${EVIDENCE_TOKEN:?RELEASE_EVIDENCE_TOKEN is required}"
+          : "${EVIDENCE_TOKEN:?GitHub evidence token is required}"
           [[ "$TAG_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$ ]]
           test "$(git rev-parse "${TAG_NAME}^{commit}")" = "$TAG_SHA"
 
@@ -58,118 +59,20 @@ jobs:
 
           test "$(resolve_remote_tag)" = "$TAG_SHA"
 
-          installation_repositories=$(api --paginate --slurp --method GET \
-            installation/repositories -f per_page=100)
-          jq -e --arg repository "$REPOSITORY" '
-            [.[].repositories[]]
-            | length == 1 and any(.full_name == $repository)
-          ' <<<"$installation_repositories" >/dev/null
-
           default_branch=$(api "repos/$REPOSITORY" --jq '.default_branch')
           test "$default_branch" = main
           comparison=$(api "repos/$REPOSITORY/compare/${TAG_SHA}...main")
           jq -e '.status == "ahead" or .status == "identical"' <<<"$comparison" >/dev/null
 
-          protection=$(api "repos/$REPOSITORY/branches/main/protection")
-          jq -e '
-            .required_status_checks.strict == true and
-            .required_pull_request_reviews.required_approving_review_count >= 1 and
-            (
-              .required_pull_request_reviews.dismiss_stale_reviews == true or
-              .required_pull_request_reviews.require_last_push_approval == true
-            )
-          ' <<<"$protection" >/dev/null
-
-          owner=${REPOSITORY%%/*}
-          repository_name=${REPOSITORY#*/}
-          approval=$(api graphql \
-            -F owner="$owner" \
-            -F name="$repository_name" \
-            -F sha="$TAG_SHA" \
-            -f query='query($owner: String!, $name: String!, $sha: GitObjectID!) {
-              repository(owner: $owner, name: $name) {
-                environment(name: "production-release") {
-                  name
-                  protectionRules(first: 100) {
-                    nodes {
-                      preventSelfReview
-                      reviewers(first: 100) { totalCount }
-                      type
-                    }
-                  }
-                }
-                object(oid: $sha) {
-                  ... on Commit {
-                    associatedPullRequests(first: 20) {
-                      nodes {
-                        baseRefName
-                        headRefOid
-                        mergedAt
-                        mergeCommit { oid }
-                        reviews(last: 100, states: [APPROVED]) {
-                          nodes {
-                            commit { oid }
-                            state
-                          }
-                        }
-                      }
-                    }
-                  }
-                }
-              }
-            }')
+          associated_pull_requests=$(api --method GET \
+            "repos/$REPOSITORY/commits/$TAG_SHA/pulls")
           jq -e --arg sha "$TAG_SHA" '
-            .data.repository.object.associatedPullRequests.nodes
-            | any(. as $pr |
-                $pr.baseRefName == "main" and
-                $pr.mergedAt != null and
-                $pr.mergeCommit.oid == $sha and
-                ($pr.reviews.nodes | any(
-                  .state == "APPROVED" and
-                  .commit.oid == $pr.headRefOid
-                ))
-              )
-          ' <<<"$approval" >/dev/null
-
-          jq -e '
-            .data.repository.environment.name == "production-release" and
-            any(.data.repository.environment.protectionRules.nodes[]?;
-              .type == "REQUIRED_REVIEWERS" and
-              .preventSelfReview == true and
-              .reviewers.totalCount >= 1
-            )
-          ' <<<"$approval" >/dev/null
-
-          ruleset_summaries=$(api --paginate --slurp --method GET \
-            "repos/$REPOSITORY/rulesets" \
-            -f includes_parents=true \
-            -f per_page=100 \
-            -f targets=tag)
-          rulesets='[]'
-          while IFS= read -r ruleset_id; do
-            [[ -n "$ruleset_id" ]] || continue
-            ruleset=$(api --method GET "repos/$REPOSITORY/rulesets/$ruleset_id" \
-              -f includes_parents=true)
-            rulesets=$(jq -cn \
-              --argjson current "$rulesets" \
-              --argjson next "$ruleset" \
-              '$current + [$next]')
-          done < <(jq -r 'add // [] | .[].id' <<<"$ruleset_summaries")
-          jq -e --arg tag "$TAG_NAME" '
             any(.[];
-              .target == "tag" and
-              .enforcement == "active" and
-              ((.conditions.ref_name.include // []) | any(
-                . == "~ALL" or
-                . == "refs/tags/v*" or
-                . == ("refs/tags/" + $tag)
-              )) and
-              ((.conditions.ref_name.exclude // []) | length == 0) and
-              ((has("bypass_actors") | not) or (.bypass_actors | length == 0)) and
-              ([.rules[].type] | index("update") != null) and
-              ([.rules[].type] | index("deletion") != null)
+              .base.ref == "main" and
+              .merged_at != null and
+              .merge_commit_sha == $sha
             )
-          ' <<<"$rulesets" >/dev/null
+          ' <<<"$associated_pull_requests" >/dev/null
       - name: Require successful workflows for the exact tag commit
         env:
           GH_TOKEN: ${{ github.token }}
@@ -237,13 +140,13 @@ jobs:
           ref: ${{ github.sha }}
       - name: Re-resolve the remote tag before building assets
         env:
-          EVIDENCE_TOKEN: ${{ secrets.RELEASE_EVIDENCE_TOKEN }}
+          EVIDENCE_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
           TAG_NAME: ${{ github.ref_name }}
           TAG_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
-          : "${EVIDENCE_TOKEN:?RELEASE_EVIDENCE_TOKEN is required}"
+          : "${EVIDENCE_TOKEN:?GitHub evidence token is required}"
           resolve_remote_tag() {
             local object object_type object_sha depth
             object=$(GH_TOKEN="$EVIDENCE_TOKEN" gh api \
@@ -280,18 +183,16 @@ jobs:
         run: cosign sign-blob --yes --bundle "gridora-${GITHUB_REF_NAME}.tar.gz.sigstore.json" "gridora-${GITHUB_REF_NAME}.tar.gz"
       - name: Publish immutable release assets
         env:
-          EVIDENCE_TOKEN: ${{ secrets.RELEASE_EVIDENCE_TOKEN }}
           PUBLISH_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
           TAG_NAME: ${{ github.ref_name }}
           TAG_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
-          : "${EVIDENCE_TOKEN:?RELEASE_EVIDENCE_TOKEN is required}"
           : "${PUBLISH_TOKEN:?GitHub publication token is required}"
           resolve_remote_tag() {
             local object object_type object_sha depth
-            object=$(GH_TOKEN="$EVIDENCE_TOKEN" gh api \
+            object=$(GH_TOKEN="$PUBLISH_TOKEN" gh api \
               -H 'X-GitHub-Api-Version: 2026-03-10' \
               "repos/$REPOSITORY/git/ref/tags/$TAG_NAME" \
               --jq '.object | [.type, .sha] | @tsv')
@@ -300,7 +201,7 @@ jobs:
             while [[ "$object_type" == tag ]]; do
               ((depth += 1))
               ((depth <= 5))
-              object=$(GH_TOKEN="$EVIDENCE_TOKEN" gh api \
+              object=$(GH_TOKEN="$PUBLISH_TOKEN" gh api \
                 -H 'X-GitHub-Api-Version: 2026-03-10' \
                 "repos/$REPOSITORY/git/tags/$object_sha" \
                 --jq '.object | [.type, .sha] | @tsv')

@@ -110,3 +110,5 @@ Rejected.
   dependency locks, and reviewer-gated publication boundaries.
 - ADR 0085 defines the disposable Docker VPS and Arma simulation boundary,
   environment-isolated Cloudflare resources, and protected production ingress.
+- ADR 0086 defines truthful single-owner deployment approval, mandatory
+  automated release gates, and ephemeral release evidence.

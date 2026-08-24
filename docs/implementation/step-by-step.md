@@ -912,7 +912,7 @@ and fixed terms are part of the STE rule for this record.
 
 ## Step 58: Publish the implementation commit
 
-- Status: pending
+- Status: local
 - Action: Commit the reviewed implementation after step 57 passes.
 - Action: Push the commit to the public `main` branch.
 - Action: Check the GitHub Actions result.
@@ -3379,14 +3379,15 @@ COMMERCIAL_REVIEW_REQUIRED` public envelope. Workflow check and 29 tests,
 - Situation: The public repository still contained only the earlier pre-alpha
   implementation. The live Cloudflare deployment and Docker VPS evidence needed
   one reviewable source commit and one protected pull request.
-- Task: Publish the exact release candidate without bypassing main review,
+- Task: Publish the exact release candidate without bypassing main pull-request,
   required checks, tag rules, or release-environment approval.
 - Action: Commit the implementation as `341bb4f`. Push branch
   `release/live-staging-arma-simulation`. Open public pull request 7 against
   `main`.
-- Action: Re-read main protection. Require a current approving review, strict
-  status checks, and enforcement for administrators. Re-read the production
-  release environment. Disable self-review and administrator bypass.
+- Action: Re-read main protection. Initially require a current approving review,
+  strict status checks, and enforcement for administrators. Re-read the
+  production release environment. Initially disable self-review and
+  administrator bypass.
 - Action: Enable the GitHub dependency graph after the first dependency-review
   job reports that the new repository does not support the check. Re-run only
   the failed Security job. Keep dependency review enabled.
@@ -3398,8 +3399,49 @@ COMMERCIAL_REVIEW_REQUIRED` public envelope. Workflow check and 29 tests,
 - Verification: CI, Security, dependency review, Trivy, and Node image
   validation pass on the published release candidate. The pull request is
   mergeable. GitHub reports `REVIEW_REQUIRED` as the only merge gate.
-- Blocker: The repository has one collaborator. That account cannot approve its
-  own pull request or protected production deployment. Release evidence also
-  needs a short-lived repository-scoped GitHub App installation token. Do not
-  weaken either control to publish a tag or release.
+- Blocker: The initial independent-review model cannot complete in a repository
+  with one collaborator because GitHub does not count the author's own pull
+  request review. Step 111 records the owner's explicit replacement decision.
 - Decision: ADR 0084.
+
+## Step 111: Adopt truthful single-owner approval and ephemeral release evidence
+
+- Status: pending
+- Situation: Gridora has one repository owner and no independent collaborator.
+  GitHub cannot count the author as the approving reviewer of their own pull
+  request, but it can require an explicit deployment approval from that owner
+  when self-review is allowed on a protected environment.
+- Task: Let the owner approve signing, simulated provider smoke, and production
+  publication without weakening automated correctness or security gates.
+- Action: Keep pull requests mandatory and set the required approving review
+  count to zero. Keep strict required status checks, administrator enforcement,
+  linear history, conversation resolution, and the force-push and deletion
+  prohibitions. Do not manufacture an approval record.
+- Action: Keep the repository owner as required reviewer for `image-signing`,
+  `provider-image-smoke`, and `production-release`. Allow self-review and disable
+  administrator bypass so each protected deployment still needs an explicit
+  approval.
+- Action: Replace the long-lived release-evidence secret with GitHub's ephemeral
+  per-job token. Prove the remote semantic tag, exact merged pull-request commit
+  on `main`, exact push CI and Security runs, and exact protected signed image
+  and simulated-provider evidence before publication.
+- Result: The only human owner can approve every protected deployment. The
+  release cannot proceed through a direct branch push, missing required check,
+  stale commit, validation-only image run, expired image artifact, mutable tag,
+  or unapproved environment.
+- Evidence: `.github/workflows/release.yml`,
+  `tests/architecture/release-workflow.test.ts`, the three protected GitHub
+  environments, main branch protection, and version-tag ruleset 21286351.
+- Verification: The release-workflow and documentation tests pass 6 tests. The
+  complete `pnpm run ci` gate reports 891 correctly formatted files, zero lint
+  or type errors across 522 files, 226 passing test files with 1,494 passing
+  tests, and 112 successful builds. GitHub reports zero required approvals, all
+  four strict check contexts, administrator enforcement, linear history,
+  conversation resolution, and no force push or deletion. All three
+  environments require Reidond, allow self-review, and prohibit administrator
+  bypass. Tag ruleset 21286351 is active for `refs/tags/v*`, prohibits updates
+  and deletions, has no exclusions or bypass actors, and reports that the
+  current user can never bypass it.
+- Blocker: Pull request checks, merge, exact signed image build,
+  simulated-provider smoke, semantic tag, and protected release remain.
+- Decision: ADR 0086.

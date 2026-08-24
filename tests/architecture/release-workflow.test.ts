@@ -65,7 +65,11 @@ describe('release workflow evidence', () => {
     const imageEvidence = read('infra/scripts/verify-release-image-evidence.sh')
 
     expect(workflow.permissions).toEqual({ contents: 'read' })
-    expect(verify.permissions).toEqual({ actions: 'read', contents: 'read' })
+    expect(verify.permissions).toEqual({
+      actions: 'read',
+      contents: 'read',
+      'pull-requests': 'read',
+    })
     expect(release.needs).toBe('verify-evidence')
     expect(release.permissions).toEqual({
       actions: 'read',
@@ -74,31 +78,21 @@ describe('release workflow evidence', () => {
     })
     expect(release.environment).toBe('production-release')
     const governance = verify.steps.find(
-      (step: { name?: string }) => step.name === 'Verify the remote tag and repository governance',
+      (step: { name?: string }) => step.name === 'Verify the remote tag and merged main provenance',
     )
     const workflowEvidence = verify.steps.find(
       (step: { name?: string }) =>
         step.name === 'Require successful workflows for the exact tag commit',
     )
 
-    expect(governance.env.EVIDENCE_TOKEN).toBe('${{ secrets.RELEASE_EVIDENCE_TOKEN }}')
+    expect(governance.env.EVIDENCE_TOKEN).toBe('${{ github.token }}')
     expect(governance.env.GH_TOKEN).toBeUndefined()
     expect(workflowEvidence.env.GH_TOKEN).toBe('${{ github.token }}')
-    expect(source).toContain('RELEASE_EVIDENCE_TOKEN is required')
-    expect(source).toContain('installation/repositories')
-    expect(source).toContain('length == 1 and any(.full_name == $repository)')
-    expect(source).toContain('.required_status_checks.strict == true')
-    expect(source).toContain('.required_approving_review_count >= 1')
-    expect(source).toContain('.dismiss_stale_reviews == true or')
-    expect(source).toContain('.require_last_push_approval == true')
-    expect(source).toContain('.mergeCommit.oid == $sha')
-    expect(source).toContain('.commit.oid == $pr.headRefOid')
-    expect(source).toContain('.type == "REQUIRED_REVIEWERS"')
-    expect(source).toContain('.preventSelfReview == true')
-    expect(source).toContain('.reviewers.totalCount >= 1')
-    expect(source).toContain('repos/$REPOSITORY/rulesets')
-    expect(source).toContain('index("update") != null')
-    expect(source).toContain('index("deletion") != null')
+    expect(source).not.toContain('RELEASE_EVIDENCE_TOKEN')
+    expect(source).not.toContain('installation/repositories')
+    expect(source).toContain('repos/$REPOSITORY/commits/$TAG_SHA/pulls')
+    expect(source).toContain('.base.ref == "main"')
+    expect(source).toContain('.merge_commit_sha == $sha')
     expect(source).toContain('require_successful_workflow ci.yml CI')
     expect(source).toContain('require_successful_workflow security.yml Security')
     expect(source.match(/bash infra\/scripts\/verify-release-image-evidence\.sh/g)).toHaveLength(3)

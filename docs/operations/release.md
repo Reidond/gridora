@@ -2,18 +2,21 @@
 
 ## Release evidence
 
-1. Merge the release commit through an approved pull request into the protected
-   `main` branch.
-2. Require strict status checks, at least one approving review, and either stale
-   review dismissal or approval of the last push on `main`.
+1. Merge the release commit through a pull request into the protected `main`
+   branch.
+2. For the single-owner repository, require zero approving reviews while
+   retaining strict status checks, administrator enforcement, linear history,
+   conversation resolution, and prohibitions on force pushes and deletion.
 3. Wait for successful `CI` and `Security` push workflows on the exact release
    commit.
 4. Dispatch the protected Node image workflow from that exact `main` commit.
    Set `build_local_image=true`. Require successful validation, local image
    build, provider boot and cleanup evidence, and the exact non-expired image
    artifact. A validation-only push run is not release evidence.
-5. Configure `production-release` with at least one required reviewer and
-   prevent self-review.
+5. Configure `image-signing`, `provider-image-smoke`, and `production-release`
+   with the repository owner as a required reviewer. Allow that reviewer to
+   approve their own deployment because there is no second collaborator.
+   Disable administrator bypass.
 6. Configure an active tag ruleset for `refs/tags/v*`, with no exclusions, that
    restricts both updates and deletions. Do not configure bypass actors.
 7. Create a semantic version tag such as `v0.1.0` on that commit.
@@ -22,47 +25,23 @@
    passes.
 10. Publish the signed archive for the exact tag commit.
 
-Store a short-lived GitHub App installation token in the
-`RELEASE_EVIDENCE_TOKEN` Actions secret before starting the release. The app
-must be installed only on this repository and have read-only repository
-permissions:
+The evidence job uses GitHub's ephemeral per-job token with only Actions,
+Contents, and Pull Requests read permissions. Do not create or store a personal
+access token or long-lived GitHub App token for release evidence.
 
-- Administration: read, for branch protection.
-- Pull requests: read, for the final head approval.
-- Environments: read, for environment protection.
-- Contents: read, for commits, comparisons, and remote tag dereferencing.
-- Metadata: read, for repository metadata and rulesets.
+The release workflow fails closed when the tag is not on `main`, the commit is
+not the exact merge result of a pull request into `main`, or any required
+workflow is missing, incomplete, or unsuccessful. A pull-request, scheduled,
+manual, or different-commit workflow run does not satisfy the CI or Security
+gate. The protected artifact-bearing Node image run is intentionally manual and
+must target the exact release commit. The workflow dereferences the remote tag
+before building and again immediately before publication.
 
-The workflow reads environment protection through GraphQL so the evidence app
-does not need Actions permission. Workflow-run queries use the job's restricted
-`GITHUB_TOKEN` instead.
-
-Do not grant the evidence app a write permission. Installation tokens expire
-after one hour. Refresh the secret and rerun the workflow if the token expires
-while the release waits for approval.
-
-The `/installation/repositories` check proves that the secret is an installation
-token and can access only this repository. GitHub does not provide an endpoint
-that introspects an already-minted installation token's permission levels; the
-permission set is returned only when the token is minted. Configure the app with
-only the permissions above and retain the non-secret minting response as release
-evidence.
-
-The release workflow fails closed when the tag is not on `main`, branch
-protection does not require strict checks and an approving review, or any
-required workflow is missing, incomplete, or unsuccessful. The tag commit must
-be the merge result of an approved pull request, and the approving review must
-target the pull request's final head commit. A pull-request, scheduled, manual,
-or different-commit workflow run does not satisfy this gate. The workflow
-dereferences the remote tag before building and again immediately before
-publication.
-
-GitHub's read-only ruleset API exposes active update and deletion restrictions,
-but it deliberately omits `bypass_actors` unless the caller has ruleset write
-access. The workflow therefore proves that the rules apply to the version tag,
-but it cannot attest that the bypass list is empty. Keep the bypass list empty
-and review that setting during release approval; granting write access to the
-evidence app would weaken the evidence boundary.
+Read back branch protection, version-tag rules, and environment protection with
+an administrator credential before tagging. Record that non-secret evidence in
+the STE release step. The release job does not grant its ephemeral token
+Administration or Environments permissions merely to re-attest GitHub settings
+that GitHub itself enforces.
 
 ## Control plane
 
