@@ -3387,11 +3387,17 @@ COMMERCIAL_REVIEW_REQUIRED` public envelope. Workflow check and 29 tests,
 - Action: Re-read main protection. Require a current approving review, strict
   status checks, and enforcement for administrators. Re-read the production
   release environment. Disable self-review and administrator bypass.
+- Action: Enable the GitHub dependency graph after the first dependency-review
+  job reports that the new repository does not support the check. Re-run only
+  the failed Security job. Keep dependency review enabled.
 - Evidence: GitHub pull request 7 and commit `341bb4f` in public repository
   `Reidond/gridora`.
 - Verification: The remote branch contains the reviewed source commit. GitHub
   reports required main checks `verify`, `cloudflare-config`,
   `dependency-and-secret-scan`, and `validate` with strict review enforcement.
+- Verification: CI, Security, dependency review, Trivy, and Node image
+  validation pass on the published release candidate. The pull request is
+  mergeable. GitHub reports `REVIEW_REQUIRED` as the only merge gate.
 - Blocker: The repository has one collaborator. That account cannot approve its
   own pull request or protected production deployment. Release evidence also
   needs a short-lived repository-scoped GitHub App installation token. Do not
