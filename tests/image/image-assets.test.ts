@@ -153,4 +153,14 @@ describe('node image assets', () => {
     expect(packer).toContain('templatefile("http/user-data.pkrtpl.hcl"')
     expect(asset('infra/packer/http/user-data.pkrtpl.hcl')).toContain('authorized-keys')
   })
+
+  it('boots the pinned installer without depending on GRUB menu line positions', () => {
+    const packer = asset('infra/packer/gridora-node.pkr.hcl')
+    expect(packer).toContain('"c<wait>"')
+    expect(packer).toContain('linux /casper/vmlinuz autoinstall ip=dhcp')
+    expect(packer).toContain('ds=\\"nocloud-net;s=http://{{ .HTTPIP }}:{{ .HTTPPort }}/\\" ---')
+    expect(packer).toContain('initrd /casper/initrd<enter><wait>')
+    expect(packer).toContain('boot<enter>')
+    expect(packer).not.toContain('<down><down><down><end>')
+  })
 })
