@@ -40,6 +40,10 @@ at their production paths. Add no-op Docker and nftables unit definitions only
 inside the disposable validation container. Then run `systemd-analyze verify`
 against the committed services, sockets, and paths.
 
+Run the privileged nested-Docker firewall and ext4 quota checks as explicit
+container UID and GID 0. Those checks exercise root-only host contracts; they
+must not inherit an ambiguous user mapping from a hosted runner.
+
 Use the successful check-run names from the published commit as the source of
 truth for branch protection. Gate every workflow environment that can reach a
 live provider, sign an image, run provider image smoke, or publish a production

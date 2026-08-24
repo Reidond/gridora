@@ -228,7 +228,7 @@ jobs:
             packages/node-provision-execution/test/index.test.ts
       - name: Prove Gridora firewall reload preserves Docker networking
         run: |
-          docker run --rm --privileged -v "$PWD:/workspace:ro" \
+          docker run --rm --privileged --user 0:0 -v "$PWD:/workspace:ro" \
             ubuntu@sha256:561618e2c15bf2397621dd04f96926663a3b5616c189cf7e38db7e82f5c538ea \
             bash -euc '
               # Run a real nested Docker daemon first.  This creates Docker's
@@ -281,7 +281,7 @@ jobs:
             '
       - name: Validate the ext4 project quota command contract
         run: |
-          docker run --rm --privileged \
+          docker run --rm --privileged --user 0:0 \
             ubuntu@sha256:561618e2c15bf2397621dd04f96926663a3b5616c189cf7e38db7e82f5c538ea \
             bash -euc '
               export DEBIAN_FRONTEND=noninteractive

@@ -3272,7 +3272,8 @@ COMMERCIAL_REVIEW_REQUIRED` public envelope. Workflow check and 29 tests,
   governance.
 - Action: Build before Wrangler checks. Lock Cloudflare provider 5.23.0 for
   Darwin ARM64 and Linux AMD64. Install the three committed helper scripts and
-  a validation-only nftables unit before `systemd-analyze verify`. Create the
+  a validation-only nftables unit before `systemd-analyze verify`. Pin the
+  privileged firewall and quota validation containers to UID/GID 0. Create the
   four workflow environments with a required reviewer and no credentials.
 - Result: The exact Wrangler binding check, Linux Terraform initialization and
   validation, and Ubuntu cloud-init/systemd verification pass locally. The
