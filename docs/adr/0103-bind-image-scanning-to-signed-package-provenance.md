@@ -28,6 +28,14 @@ minimal Ubuntu guest did not have a GnuPG home directory. GnuPG exited before
 it inspected the downloaded repository key. This run also produced no image
 artifact.
 
+Replacement run 32788506869 passed image construction, QCOW2 integrity,
+root-filesystem extraction, package-policy validation, and SBOM generation.
+The unchanged Grype gate then found Go 1.22.2, `golang.org/x/crypto` 0.23.0,
+and related module evidence. A clean Ubuntu 24.04 reproduction mapped every
+matching fact to binaries owned by `snapd` 2.76.3+ubuntu24.04. Gridora does not
+use Snap for Docker, cloudflared, Traefik, the node runtime, the agent, or game
+workloads.
+
 ## Task
 
 Keep the High-or-Critical fixed-vulnerability gate. Give the scanner one
@@ -46,6 +54,12 @@ Inspect the repository key in a dedicated mode-0700 temporary GnuPG home.
 Delete that directory after the fingerprint matches. Do not depend on a user
 keyring in the minimal image, and do not import the Docker key into a persistent
 user keyring.
+
+Purge `snapd` after the complete Ubuntu upgrade and required base-package
+installation. Prove that its package record, client, and daemon are absent.
+Do not run `apt autoremove`: systemd, AppArmor, udev, and SSH packages that the
+node still needs can be marked automatic on the installation media. This is an
+image-minimization decision, not a scanner waiver.
 
 Build cloudflared 2026.8.2 from exact source commit
 `733bfb939963e150dcf5c4faddb1603f744fbc98`. Use its vendored dependency tree
@@ -72,6 +86,8 @@ and guest package database. The nine scoped Docker binaries do not produce
 false matches from stale embedded module strings, but their five owning Debian
 packages remain visible. cloudflared is built with a non-vulnerable current Go
 toolchain from immutable reviewed source.
+The unused Snap daemon and its embedded stale Go-module inventory are absent
+from the node image, reducing both attack surface and false package identity.
 
 Changing a repository key, source, package version, owned path, cataloger
 override, cloudflared source commit, or Go version fails before signing. The
@@ -87,3 +103,6 @@ owner-approved exact-main image run. The final proof must also include Cosign
 signing, artifact upload, and separately approved simulated-provider smoke.
 The GnuPG correction must also pass in a clean Ubuntu 24.04 container and prove
 that the temporary keyring is absent after verification.
+The Snap correction must reproduce the exact module-to-binary ownership map,
+prove that a purge removes only `snapd`, retain systemd, AppArmor, udev, and SSH,
+and yield no Snap-owned Go facts before the next protected build.

@@ -190,6 +190,18 @@ describe('node image assets', () => {
     const provision = asset('infra/packer/scripts/provision.sh')
     const policy = asset('infra/scripts/validate-rootfs-package-policy.sh')
     expect(provision).toContain('apt-get dist-upgrade -y --no-install-recommends')
+    expect(provision).toContain('apt-get purge -y snapd')
+    expect(provision).toContain("dpkg-query -W -f='${Status}' snapd")
+    expect(provision).toContain('snapd package remains after purge')
+    expect(provision).toContain('test ! -e /usr/bin/snap')
+    expect(provision).toContain('test ! -e /usr/lib/snapd/snapd')
+    expect(provision).not.toContain('apt-get autoremove')
+    expect(provision.indexOf('apt-get dist-upgrade')).toBeLessThan(
+      provision.indexOf('apt-get purge -y snapd'),
+    )
+    expect(provision.indexOf('apt-get purge -y snapd')).toBeLessThan(
+      provision.indexOf('https://download.docker.com/linux/ubuntu/gpg'),
+    )
     expect(provision).toContain('https://download.docker.com/linux/ubuntu/gpg')
     expect(provision).toContain('9DC858229FC7DD38854AE2D88D81803C0EBFCD88')
     expect(provision).toContain('install -d -m 0700 /tmp/gridora-docker-key-check')

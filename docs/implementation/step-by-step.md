@@ -3985,6 +3985,12 @@ directory /lib/modules/6.17.0-1022-azure`. Step 116 installs the matching
 - Action: Protected run 32786521368 showed that a minimal Ubuntu guest has no
   default GnuPG home. Inspect the repository key in a dedicated mode-0700
   temporary GnuPG home. Delete that directory after the fingerprint matches.
+- Action: Protected run 32788506869 built and extracted the image, then failed
+  the unchanged Grype gate on Go facts embedded in Ubuntu's unused `snapd`
+  binaries. A clean Ubuntu 24.04 reproduction mapped every matching fact to
+  `snapd` 2.76.3+ubuntu24.04. Purge only `snapd`; do not run `apt autoremove`.
+  Prove that Snap's package record, client, and daemon are absent while systemd,
+  AppArmor, udev, and SSH remain installed.
 - Action: Build cloudflared 2026.8.2 from exact commit
   `733bfb939963e150dcf5c4faddb1603f744fbc98` with its vendored dependencies and
   Go 1.27.0. Record the source, toolchain, and artifact digest.
@@ -3995,12 +4001,13 @@ directory /lib/modules/6.17.0-1022-azure`. Step 116 installs the matching
 - Result: Ubuntu kernel evidence comes from Ubuntu package records. Docker
   evidence comes from exact signed packages and ownership lists. cloudflared
   uses the current Go toolchain. There is no vulnerability-ID suppression and
-  no lower severity threshold.
+  no lower severity threshold. The unused Snap daemon and its stale embedded Go
+  inventory are removed from the node image instead of being waived.
 - Evidence: `.github/workflows/image.yml`,
   `infra/packer/scripts/provision.sh`,
   `infra/scripts/validate-rootfs-package-policy.sh`,
   `infra/scripts/generate-sbom.sh`, `infra/scripts/scan-artifact.sh`, protected
-  runs 32779717636 and 32786521368, and ADR 0103.
+  runs 32779717636, 32786521368, and 32788506869, and ADR 0103.
 - Verification: Require Bash parsing, ShellCheck, focused policy, SBOM, scan,
   image, workflow, and documentation tests, Packer formatting and validation,
   the complete repository gate, pull-request CI and Security, then a new
@@ -4012,7 +4019,9 @@ directory /lib/modules/6.17.0-1022-azure`. Step 116 installs the matching
   vulnerability and secret scan also pass. The GnuPG repair passes Bash,
   pinned ShellCheck, all 22 image-asset tests, and a clean Ubuntu 24.04
   container check that verifies the exact fingerprint and temporary-keyring
-  removal.
+  removal. A second clean Ubuntu 24.04 check maps the failing Go facts to Snap,
+  proves that purging only `snapd` retains systemd, AppArmor, udev, and SSH, and
+  leaves no Snap-owned Go facts in the Syft inventory.
 - Blocker: Do not tag or release until the replacement run signs and uploads
   the image and completes provider smoke.
 - Decision: ADR 0103.
