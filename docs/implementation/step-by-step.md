@@ -3989,8 +3989,13 @@ directory /lib/modules/6.17.0-1022-azure`. Step 116 installs the matching
   the unchanged Grype gate on Go facts embedded in Ubuntu's unused `snapd`
   binaries. A clean Ubuntu 24.04 reproduction mapped every matching fact to
   `snapd` 2.76.3+ubuntu24.04. Purge only `snapd`; do not run `apt autoremove`.
-  Prove that Snap's package record, client, and daemon are absent while systemd,
-  AppArmor, udev, and SSH remain installed.
+  Prove that Snap is not installed and its client and daemon are absent while
+  systemd, AppArmor, udev, and SSH remain installed.
+- Action: Exact-main run 32791301679 purged the Snap payload and its dependent
+  `ubuntu-server-minimal` meta-package. It then stopped because the package
+  catalog still exposed Snap with state `not-installed`. Accept only an empty
+  or `not-installed` state, and continue to require the client and daemon paths
+  to be absent. Do not treat a queryable catalog record as installed software.
 - Action: Build cloudflared 2026.8.2 from exact commit
   `733bfb939963e150dcf5c4faddb1603f744fbc98` with its vendored dependencies and
   Go 1.27.0. Record the source, toolchain, and artifact digest.
@@ -4007,7 +4012,7 @@ directory /lib/modules/6.17.0-1022-azure`. Step 116 installs the matching
   `infra/packer/scripts/provision.sh`,
   `infra/scripts/validate-rootfs-package-policy.sh`,
   `infra/scripts/generate-sbom.sh`, `infra/scripts/scan-artifact.sh`, protected
-  runs 32779717636, 32786521368, and 32788506869, and ADR 0103.
+  runs 32779717636, 32786521368, 32788506869, and 32791301679, and ADR 0103.
 - Verification: Require Bash parsing, ShellCheck, focused policy, SBOM, scan,
   image, workflow, and documentation tests, Packer formatting and validation,
   the complete repository gate, pull-request CI and Security, then a new

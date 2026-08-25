@@ -34,10 +34,8 @@ sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
   ca-certificates cloud-init curl e2fsprogs gpg jq nftables openssl quota tar \
   unattended-upgrades zstd
 sudo DEBIAN_FRONTEND=noninteractive apt-get purge -y snapd
-if dpkg-query -W -f='${Status}' snapd >/dev/null 2>&1; then
-  echo 'snapd package remains after purge' >&2
-  exit 1
-fi
+snapd_status=$(dpkg-query -W -f='${db:Status-Status}' snapd 2>/dev/null || true)
+[[ -z "${snapd_status}" || "${snapd_status}" == not-installed ]]
 test ! -e /usr/bin/snap
 test ! -e /usr/lib/snapd/snapd
 sudo install -d -m 0755 /etc/apt/keyrings

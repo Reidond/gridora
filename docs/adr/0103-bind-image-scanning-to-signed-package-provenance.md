@@ -36,6 +36,12 @@ matching fact to binaries owned by `snapd` 2.76.3+ubuntu24.04. Gridora does not
 use Snap for Docker, cloudflared, Traefik, the node runtime, the agent, or game
 workloads.
 
+Exact-main run 32791301679 then proved that Ubuntu purges the Snap payload and
+its dependent `ubuntu-server-minimal` meta-package, but retains an available
+package-catalog record whose state is `not-installed`. The first post-purge
+assertion incorrectly treated any queryable record as an installed package.
+The run stopped before producing an artifact.
+
 ## Task
 
 Keep the High-or-Critical fixed-vulnerability gate. Give the scanner one
@@ -56,7 +62,10 @@ keyring in the minimal image, and do not import the Docker key into a persistent
 user keyring.
 
 Purge `snapd` after the complete Ubuntu upgrade and required base-package
-installation. Prove that its package record, client, and daemon are absent.
+installation. Require its installed-package state to be empty or
+`not-installed`, and prove that its client and daemon are absent. Accept removal
+of the dependency-only `ubuntu-server-minimal` meta-package; the purge does not
+remove its installed runtime payload.
 Do not run `apt autoremove`: systemd, AppArmor, udev, and SSH packages that the
 node still needs can be marked automatic on the installation media. This is an
 image-minimization decision, not a scanner waiver.
@@ -104,5 +113,6 @@ signing, artifact upload, and separately approved simulated-provider smoke.
 The GnuPG correction must also pass in a clean Ubuntu 24.04 container and prove
 that the temporary keyring is absent after verification.
 The Snap correction must reproduce the exact module-to-binary ownership map,
-prove that a purge removes only `snapd`, retain systemd, AppArmor, udev, and SSH,
-and yield no Snap-owned Go facts before the next protected build.
+prove that a purge removes only `snapd` and its dependency-only server meta
+package, retain systemd, AppArmor, udev, and SSH, and yield no Snap-owned Go
+facts before the next protected build.
