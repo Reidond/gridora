@@ -4099,11 +4099,17 @@ token '<'` because the deployed Nuxt runtime had an empty API base.
   only when explicitly invoked and do not pause for self-approval.
 - Evidence: `.github/workflows/ci.yml`, `.github/workflows/image.yml`,
   `.github/workflows/release.yml`, `docs/operations/release.md`, live GitHub
-  settings readback, cancelled superseded image run 32796231975, and ADR 0105.
-- Verification: Require workflow parsing and governance assertions,
-  documentation integrity, the complete local repository gate, one exact-main
-  CI run after publication, and live API readback of repository security,
-  branch, tag, and environment settings.
-- Blocker: Live GitHub settings and exact-main CI evidence are recorded after
-  the local change passes verification and is published.
+  settings readback, commit `4bea8509116d994519e9d570ecdbb5516a0fabb3`,
+  successful CI run 32798285753, cancelled superseded image run 32796231975,
+  and ADR 0105.
+- Verification: Workflow, image, and documentation tests pass 29 assertions.
+  The complete local gate reports 907 formatted files, zero lint or type
+  errors across 522 files, 226 passing test files with 1,508 passing tests, and
+  112 successful builds. Generated bindings, 11 Cloudflare runtime tests, the
+  real Docker boundary test, and the complete simulated Arma VPS lifecycle
+  pass. Exact-main CI run 32798285753 passes its single `verify` job. Live API
+  readback confirms no `main` protection, disabled secret scanning and
+  vulnerability alerts, one reviewer-free `image-signing` environment, and an
+  active immutable `v*` tag ruleset.
+- Blocker: None for the GitHub process simplification.
 - Decision: ADR 0105.

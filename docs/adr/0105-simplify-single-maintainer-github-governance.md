@@ -64,9 +64,10 @@ review gates when there is an actual independent reviewer.
 
 ## Verification
 
-Require exactly `ci.yml`, `image.yml`, and `release.yml`. Parse all three
-workflows. Assert that only CI has pull-request or `main` push triggers, Node
-image has only `workflow_dispatch`, and Release has only version-tag push.
+Require exactly the checked-in `ci.yml`, `image.yml`, and `release.yml`. Parse
+all three workflows. Assert that only CI has pull-request or `main` push
+triggers, Node image has only `workflow_dispatch`, and Release has only
+version-tag push.
 Require the release verifier to depend on exact-commit CI and image evidence but
 not Security or pull-request provenance. Run documentation integrity, the
 focused workflow tests, and the complete repository gate.
