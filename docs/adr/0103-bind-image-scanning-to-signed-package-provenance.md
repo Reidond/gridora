@@ -42,6 +42,14 @@ package-catalog record whose state is `not-installed`. The first post-purge
 assertion incorrectly treated any queryable record as an installed package.
 The run stopped before producing an artifact.
 
+Exact-main run 32793064057 passed the corrected Snap assertion, completed the
+QCOW2 image, extracted the root filesystem, and validated its signed package
+policy. The Grype gate then found `go.etcd.io/etcd/client/pkg/v3` 3.6.8 inside
+the official Traefik 3.7.11 binary. Syft and `go version -m` mapped the module,
+fasthttp 1.69.0, and the current compressed-data dependency directly to that
+binary. Upstream's current tag had not yet adopted the fixed etcd 3.6.14.
+Signing, upload, and provider smoke did not run.
+
 ## Task
 
 Keep the High-or-Critical fixed-vulnerability gate. Give the scanner one
@@ -75,6 +83,16 @@ Build cloudflared 2026.8.2 from exact source commit
 and Go 1.27.0. Record the resulting binary digest, source commit, and Go version
 in build evidence.
 
+Build Gridora's Traefik `v3.7.11-gridora.1` from exact upstream release commit
+`faa1eb590646aed94e561e24a59be0c47353ae95` with Go 1.27.0. Apply only the
+reviewed module update that moves etcd API and clients from 3.6.8 to 3.6.14,
+fasthttp from 1.69.0 to 1.70.0, and its brotli dependency from 1.2.0 to 1.2.1.
+Require the resulting go.mod/go.sum diff to match SHA-256
+`5026a6b4ae6b64d13564ab27f950e164988df21f78d204fcdfeb90509acefd7f`.
+Verify module checksums, embedded build metadata, and the built binary's module
+versions before it enters Packer. Record the source, patch, toolchain, version,
+and binary digest in image input evidence.
+
 Pin Syft 1.51.0 and Grype 0.117.0. Before SBOM generation, read the guest's
 Docker repository key, source definition, Debian package database, and package
 ownership lists directly from the canonical rootfs archive. Add the verified
@@ -97,6 +115,9 @@ packages remain visible. cloudflared is built with a non-vulnerable current Go
 toolchain from immutable reviewed source.
 The unused Snap daemon and its embedded stale Go-module inventory are absent
 from the node image, reducing both attack surface and false package identity.
+The Traefik executable no longer inherits the fixed High etcd vulnerability
+from the upstream release binary. Gridora keeps the upstream release commit and
+records a narrow dependency-only patch instead of suppressing its module facts.
 
 Changing a repository key, source, package version, owned path, cataloger
 override, cloudflared source commit, or Go version fails before signing. The
@@ -116,3 +137,6 @@ The Snap correction must reproduce the exact module-to-binary ownership map,
 prove that a purge removes only `snapd` and its dependency-only server meta
 package, retain systemd, AppArmor, udev, and SSH, and yield no Snap-owned Go
 facts before the next protected build.
+The Traefik correction must build on Linux amd64 with Go 1.27.0, expose etcd
+3.6.14 and fasthttp 1.70.0 in the generated SBOM, and pass pinned Syft 1.51.0
+and Grype 0.117.0 without a vulnerability waiver before another image run.
