@@ -110,8 +110,8 @@ Rejected.
   dependency locks, and reviewer-gated publication boundaries.
 - ADR 0085 defines the disposable Docker VPS and Arma simulation boundary,
   environment-isolated Cloudflare resources, and protected production ingress.
-- ADR 0086 defines truthful single-owner deployment approval, mandatory
-  automated release gates, and ephemeral release evidence.
+- ADR 0086 formerly defined single-owner deployment approvals and is
+  superseded by ADR 0105.
 - ADR 0087 defines the Linux KVM firewall proof at the Docker host-DNAT boundary
   instead of same-bridge layer-2 traffic.
 - ADR 0088 moved non-secret kernel proofs into required pull-request validation;
@@ -149,3 +149,5 @@ Rejected.
   cataloger removal without weakening the High-or-Critical release gate.
 - ADR 0104 binds the public entry Worker to its exact API and Access origins and
   keeps authenticated console routes on the Access-protected console hostname.
+- ADR 0105 reduces GitHub automation to one routine CI signal plus manual image
+  and tag-triggered release workflows, with no self-review gates.

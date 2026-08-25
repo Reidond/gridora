@@ -4076,3 +4076,34 @@ token '<'` because the deployed Nuxt runtime had an empty API base.
   and zero Gridora console errors.
 - Blocker: None for the public-entry repair. Release admission remains in Step 128.
 - Decision: ADR 0104.
+
+## Step 130: Simplify GitHub for one maintainer
+
+- Status: local
+- Situation: Five workflows, four required checks, CODEOWNERS, weekly
+  dependency updates, scheduled code-security scanning, and four self-review
+  environments produced overlapping notifications for a repository with one
+  developer.
+- Task: Keep useful build feedback and release evidence without making the
+  owner review and approve their own work.
+- Action: Keep one push and pull-request `CI` workflow with one `verify` job.
+  Delete the duplicate Provider contracts and Security workflows, CODEOWNERS,
+  and Dependabot configuration. Make Node image manual-only and Release
+  tag-only. Remove Security and pull-request provenance from release admission.
+- Action: Remove `main` branch protection. Disable repository secret scanning,
+  push protection, and vulnerability alerts. Keep only the non-empty
+  `image-signing` environment, remove its reviewer and wait timer, and delete
+  the three empty environments. Keep immutable version-tag rules.
+- Result: Ordinary changes produce one advisory CI result. Direct pushes and
+  optional pull requests are both valid. Image construction and release run
+  only when explicitly invoked and do not pause for self-approval.
+- Evidence: `.github/workflows/ci.yml`, `.github/workflows/image.yml`,
+  `.github/workflows/release.yml`, `docs/operations/release.md`, live GitHub
+  settings readback, cancelled superseded image run 32796231975, and ADR 0105.
+- Verification: Require workflow parsing and governance assertions,
+  documentation integrity, the complete local repository gate, one exact-main
+  CI run after publication, and live API readback of repository security,
+  branch, tag, and environment settings.
+- Blocker: Live GitHub settings and exact-main CI evidence are recorded after
+  the local change passes verification and is published.
+- Decision: ADR 0105.

@@ -1,6 +1,6 @@
 # ADR 0086: Use truthful single-owner approval with mandatory automation
 
-- Status: Accepted
+- Status: Superseded
 - Date: 2026-08-24
 - Extends: ADR 0074, ADR 0075, and ADR 0084
 

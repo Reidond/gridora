@@ -18,14 +18,13 @@ jobs:
     permissions:
       actions: read
       contents: read
-      pull-requests: read
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           fetch-depth: 0
           persist-credentials: false
           ref: ${{ github.sha }}
-      - name: Verify the remote tag and merged main provenance
+      - name: Verify the remote tag and main provenance
         env:
           EVIDENCE_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
@@ -64,15 +63,6 @@ jobs:
           comparison=$(api "repos/$REPOSITORY/compare/${TAG_SHA}...main")
           jq -e '.status == "ahead" or .status == "identical"' <<<"$comparison" >/dev/null
 
-          associated_pull_requests=$(api --method GET \
-            "repos/$REPOSITORY/commits/$TAG_SHA/pulls")
-          jq -e --arg sha "$TAG_SHA" '
-            any(.[];
-              .base.ref == "main" and
-              .merged_at != null and
-              .merge_commit_sha == $sha
-            )
-          ' <<<"$associated_pull_requests" >/dev/null
       - name: Require successful workflows for the exact tag commit
         env:
           GH_TOKEN: ${{ github.token }}
@@ -120,13 +110,11 @@ jobs:
           }
 
           require_successful_workflow ci.yml CI
-          require_successful_workflow security.yml Security
           bash infra/scripts/verify-release-image-evidence.sh
 
   release:
     needs: verify-evidence
     runs-on: ubuntu-24.04
-    environment: production-release
     timeout-minutes: 25
     permissions:
       actions: read
@@ -168,7 +156,7 @@ jobs:
             printf '%s\n' "$object_sha"
           }
           test "$(resolve_remote_tag)" = "$TAG_SHA"
-      - name: Revalidate protected Node image evidence after production approval
+      - name: Revalidate Node image evidence before publication
         env:
           GH_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}

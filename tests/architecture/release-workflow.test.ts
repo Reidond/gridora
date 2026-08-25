@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs'
+import { readFileSync, readdirSync } from 'node:fs'
 import { resolve } from 'node:path'
 
 import { describe, expect, it } from 'vitest'
@@ -7,12 +7,21 @@ import { parse } from 'yaml'
 const read = (path: string): string => readFileSync(resolve(process.cwd(), path), 'utf8')
 
 describe('release workflow evidence', () => {
-  it('runs image validation for every exact main commit and every pull request', () => {
+  it('keeps one routine CI workflow and makes image work explicitly manual', () => {
+    expect(readdirSync(resolve(process.cwd(), '.github/workflows')).sort()).toEqual([
+      'ci.yml',
+      'image.yml',
+      'release.yml',
+    ])
+
+    const ci = parse(read('.github/workflows/ci.yml'))
+    expect(Object.keys(ci.on).sort()).toEqual(['pull_request', 'push'])
+    expect(Object.keys(ci.jobs)).toEqual(['verify'])
+
     const workflow = parse(read('.github/workflows/image.yml'))
     const triggers = workflow.on
 
-    expect(triggers.push.branches).toEqual(['main'])
-    expect(triggers.pull_request).toEqual({})
+    expect(Object.keys(triggers)).toEqual(['workflow_dispatch'])
     expect(workflow.permissions).toEqual({ contents: 'read' })
     expect(workflow.jobs['build-local'].permissions).toEqual({
       contents: 'read',
@@ -20,10 +29,6 @@ describe('release workflow evidence', () => {
     })
 
     const smoke = workflow.jobs['provider-image-smoke']
-    expect(workflow.on.workflow_dispatch.inputs.provider_image_smoke_approved).toMatchObject({
-      type: 'boolean',
-      default: false,
-    })
     expect(workflow.on.workflow_dispatch.inputs.provider_image_smoke_ttl_minutes).toMatchObject({
       type: 'string',
       default: '30',
@@ -36,16 +41,16 @@ describe('release workflow evidence', () => {
     expect(smoke).toMatchObject({
       name: 'provider-image-smoke',
       needs: 'build-local',
-      environment: 'provider-image-smoke',
       'timeout-minutes': 60,
       permissions: { contents: 'read', 'id-token': 'write' },
     })
+    expect(smoke.environment).toBeUndefined()
     expect(smoke.if).toContain("github.event_name == 'workflow_dispatch'")
     expect(smoke.if).toContain('inputs.build_local_image')
     expect(smoke.if).toContain("github.ref == 'refs/heads/main'")
     expect(smoke.steps.map((step: { name?: string }) => step.name)).toEqual(
       expect.arrayContaining([
-        'Require explicit protected simulated smoke approval and bounded inputs',
+        'Validate bounded simulated smoke inputs',
         'Verify the exact signed artifact selected for smoke',
         'Exercise Arma lifecycle on the disposable VPS simulation',
       ]),
@@ -64,21 +69,22 @@ describe('release workflow evidence', () => {
     const source = read('.github/workflows/release.yml')
     const imageEvidence = read('infra/scripts/verify-release-image-evidence.sh')
 
+    expect(Object.keys(workflow.on)).toEqual(['push'])
+    expect(workflow.on.push.tags).toEqual(['v*'])
     expect(workflow.permissions).toEqual({ contents: 'read' })
     expect(verify.permissions).toEqual({
       actions: 'read',
       contents: 'read',
-      'pull-requests': 'read',
     })
     expect(release.needs).toBe('verify-evidence')
+    expect(release.environment).toBeUndefined()
     expect(release.permissions).toEqual({
       actions: 'read',
       contents: 'write',
       'id-token': 'write',
     })
-    expect(release.environment).toBe('production-release')
     const governance = verify.steps.find(
-      (step: { name?: string }) => step.name === 'Verify the remote tag and merged main provenance',
+      (step: { name?: string }) => step.name === 'Verify the remote tag and main provenance',
     )
     const workflowEvidence = verify.steps.find(
       (step: { name?: string }) =>
@@ -90,15 +96,13 @@ describe('release workflow evidence', () => {
     expect(workflowEvidence.env.GH_TOKEN).toBe('${{ github.token }}')
     expect(source).not.toContain('RELEASE_EVIDENCE_TOKEN')
     expect(source).not.toContain('installation/repositories')
-    expect(source).toContain('repos/$REPOSITORY/commits/$TAG_SHA/pulls')
-    expect(source).toContain('.base.ref == "main"')
-    expect(source).toContain('.merge_commit_sha == $sha')
+    expect(source).not.toContain('repos/$REPOSITORY/commits/$TAG_SHA/pulls')
     expect(source).toContain('require_successful_workflow ci.yml CI')
-    expect(source).toContain('require_successful_workflow security.yml Security')
+    expect(source).not.toContain('security.yml')
     expect(source.match(/bash infra\/scripts\/verify-release-image-evidence\.sh/g)).toHaveLength(3)
     const revalidateStepIndex = release.steps.findIndex(
       (step: { name?: string }) =>
-        step.name === 'Revalidate protected Node image evidence after production approval',
+        step.name === 'Revalidate Node image evidence before publication',
     )
     const sourceArchiveStepIndex = release.steps.findIndex(
       (step: { name?: string }) => step.name === 'Create reproducible source archive',

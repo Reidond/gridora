@@ -1,25 +1,14 @@
 name: Node image
 
 on:
-  # This check is required by main protection, so every pull request must
-  # produce the context even when its diff does not touch image paths.
-  pull_request: {}
-  # Release evidence must exist for the exact commit, even when a main change
-  # does not match the narrower pull-request image paths.
-  push:
-    branches: [main]
   workflow_dispatch:
     inputs:
       build_local_image:
         description: Build the local QEMU image. This does not create provider resources.
         type: boolean
         default: false
-      provider_image_smoke_approved:
-        description: Approve the protected disposable VPS simulation and cleanup smoke test.
-        type: boolean
-        default: false
       provider_image_smoke_provider:
-        description: Execution target for the protected smoke test.
+        description: Execution target for the disposable smoke test.
         type: choice
         options: [simulated]
         default: simulated
@@ -389,10 +378,10 @@ jobs:
         run: |
           [[ "$UBUNTU_ISO_URL" == https://releases.ubuntu.com/24.04/* ]]
           [[ "$UBUNTU_ISO_SHA256" =~ ^[a-f0-9]{64}$ ]]
-      # These inputs are available only through the protected image-signing
-      # environment. The image receives the public key, policy, and signed
-      # baseline manifest; the release-signing private key stays on the runner.
-      - name: Prepare protected baseline agent-update inputs
+      # These inputs remain scoped to the image-signing environment. The image
+      # receives the public key, policy, and signed baseline manifest; the
+      # release-signing private key stays on the runner.
+      - name: Prepare scoped baseline agent-update inputs
         env:
           AGENT_UPDATE_ARTIFACT_BASE_URL: ${{ vars.GRIDORA_AGENT_UPDATE_ARTIFACT_BASE_URL }}
           AGENT_UPDATE_POLICY_JSON: ${{ vars.GRIDORA_AGENT_UPDATE_POLICY_JSON }}
@@ -642,7 +631,7 @@ jobs:
           retention-days: 7
 
   # A successful manual image run is not release evidence unless this job also
-  # succeeds. The protected lane deliberately uses a disposable Docker VPS
+  # succeeds. The manual lane deliberately uses a disposable Docker VPS
   # simulation; it proves Gridora behavior without claiming a paid provider
   # image registration or instance mutation.
   provider-image-smoke:
@@ -653,7 +642,6 @@ jobs:
       github.ref == 'refs/heads/main'
     needs: build-local
     runs-on: ubuntu-24.04
-    environment: provider-image-smoke
     timeout-minutes: 60
     permissions:
       contents: read
@@ -668,18 +656,13 @@ jobs:
           node-version: 24
           cache: pnpm
       - uses: sigstore/cosign-installer@d7543c93d881b35a8faa02e8e3605f69b7a1ce62 # v3.10.0
-      - name: Require explicit protected simulated smoke approval and bounded inputs
+      - name: Validate bounded simulated smoke inputs
         env:
-          APPROVED: ${{ inputs.provider_image_smoke_approved }}
           PLAN: ${{ inputs.provider_image_smoke_plan }}
           PROVIDER: ${{ inputs.provider_image_smoke_provider }}
           REGION: ${{ inputs.provider_image_smoke_region }}
           TTL_MINUTES: ${{ inputs.provider_image_smoke_ttl_minutes }}
         run: |
-          [[ "$APPROVED" == true ]] || {
-            echo 'Explicit simulated VPS smoke approval is required.' >&2
-            exit 1
-          }
           [[ "$PROVIDER" == simulated ]]
           [[ "$TTL_MINUTES" =~ ^([1-9]|[1-5][0-9]|60)$ ]] || {
             echo 'Simulated VPS smoke TTL must be an integer from 1 to 60 minutes.' >&2
