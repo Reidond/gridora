@@ -3996,6 +3996,12 @@ directory /lib/modules/6.17.0-1022-azure`. Step 116 installs the matching
   catalog still exposed Snap with state `not-installed`. Accept only an empty
   or `not-installed` state, and continue to require the client and daemon paths
   to be absent. Do not treat a queryable catalog record as installed software.
+- Action: Exact-main run 32793064057 passed image construction, rootfs
+  extraction, and package policy, then found fixed High etcd 3.6.8 evidence in
+  the official Traefik 3.7.11 binary. Build `v3.7.11-gridora.1` from exact
+  upstream release commit `faa1eb590646aed94e561e24a59be0c47353ae95` with Go
+  1.27.0. Update only etcd to 3.6.14, fasthttp to 1.70.0, and brotli to 1.2.1.
+  Fence the exact module diff with SHA-256 `5026a6b4ae6b64d13564ab27f950e164988df21f78d204fcdfeb90509acefd7f`.
 - Action: Build cloudflared 2026.8.2 from exact commit
   `733bfb939963e150dcf5c4faddb1603f744fbc98` with its vendored dependencies and
   Go 1.27.0. Record the source, toolchain, and artifact digest.
@@ -4007,12 +4013,15 @@ directory /lib/modules/6.17.0-1022-azure`. Step 116 installs the matching
   evidence comes from exact signed packages and ownership lists. cloudflared
   uses the current Go toolchain. There is no vulnerability-ID suppression and
   no lower severity threshold. The unused Snap daemon and its stale embedded Go
-  inventory are removed from the node image instead of being waived.
+  inventory are removed from the node image instead of being waived. Traefik's
+  vulnerable embedded etcd module is upgraded in reviewed source, not filtered
+  from the SBOM.
 - Evidence: `.github/workflows/image.yml`,
   `infra/packer/scripts/provision.sh`,
   `infra/scripts/validate-rootfs-package-policy.sh`,
   `infra/scripts/generate-sbom.sh`, `infra/scripts/scan-artifact.sh`, protected
-  runs 32779717636, 32786521368, 32788506869, and 32791301679, and ADR 0103.
+  runs 32779717636, 32786521368, 32788506869, 32791301679, and 32793064057,
+  and ADR 0103.
 - Verification: Require Bash parsing, ShellCheck, focused policy, SBOM, scan,
   image, workflow, and documentation tests, Packer formatting and validation,
   the complete repository gate, pull-request CI and Security, then a new
@@ -4026,7 +4035,10 @@ directory /lib/modules/6.17.0-1022-azure`. Step 116 installs the matching
   container check that verifies the exact fingerprint and temporary-keyring
   removal. A second clean Ubuntu 24.04 check maps the failing Go facts to Snap,
   proves that purging only `snapd` retains systemd, AppArmor, udev, and SSH, and
-  leaves no Snap-owned Go facts in the Syft inventory.
+  leaves no Snap-owned Go facts in the Syft inventory. A Linux amd64 Traefik
+  build from the exact upstream commit embeds Go 1.27.0, etcd 3.6.14, fasthttp
+  1.70.0, and compress 1.18.7; pinned Syft 1.51.0 and Grype 0.117.0 report no
+  vulnerabilities in that binary.
 - Blocker: Do not tag or release until the replacement run signs and uploads
   the image and completes provider smoke.
 - Decision: ADR 0103.

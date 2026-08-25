@@ -88,6 +88,21 @@ describe('node image assets', () => {
     expect(workflow).not.toContain('cloudflared/releases/download')
   })
 
+  it('builds Traefik from the exact release source with fixed modules', () => {
+    const workflow = asset('.github/workflows/image.yml')
+    expect(workflow).toContain('repository: traefik/traefik')
+    expect(workflow).toContain('ref: faa1eb590646aed94e561e24a59be0c47353ae95')
+    expect(workflow).toContain('go.etcd.io/etcd/client/pkg/v3@v3.6.14')
+    expect(workflow).toContain('github.com/valyala/fasthttp@v1.70.0')
+    expect(workflow).toContain(
+      'TRAEFIK_PATCH_SHA256: 5026a6b4ae6b64d13564ab27f950e164988df21f78d204fcdfeb90509acefd7f',
+    )
+    expect(workflow).toContain('TRAEFIK_VERSION: v3.7.11-gridora.1')
+    expect(workflow).toContain('traefikGoVersion: $traefikGoVersion')
+    expect(workflow).not.toContain('traefik/traefik/releases/download')
+    expect(workflow).not.toContain('traefikArchiveSha256')
+  })
+
   it('hardens the agent systemd unit', () => {
     const unit = asset('infra/images/systemd/gridora-agent.service')
     expect(unit).toContain('NoNewPrivileges=true')

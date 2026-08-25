@@ -244,6 +244,13 @@ jobs:
           ref: 733bfb939963e150dcf5c4faddb1603f744fbc98
           path: .vendor/cloudflared
           persist-credentials: false
+      - name: Checkout the exact Traefik source
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          repository: traefik/traefik
+          ref: faa1eb590646aed94e561e24a59be0c47353ae95
+          path: .vendor/traefik
+          persist-credentials: false
       - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
         with:
           version: '11.21.0'
@@ -338,17 +345,43 @@ jobs:
             "cloudflared version $CLOUDFLARED_VERSION (built $CLOUDFLARED_BUILD_TIME)"
           cloudflared_sha=$(sha256sum "$RUNNER_TEMP/cloudflared" | cut -d ' ' -f 1)
           echo "CLOUDFLARED_SHA256=$cloudflared_sha" >> "$GITHUB_ENV"
-      - name: Download the pinned Traefik binary
+      - name: Build Traefik from exact reviewed source and fixed modules
         env:
-          TRAEFIK_ARCHIVE_SHA256: 0bd0b7152805af906a9feb5aec95e96322237d715ae89c4fe3adbbc07a63b631
-          TRAEFIK_VERSION: 3.7.11
+          TRAEFIK_BUILD_DATE: 2026-08-18T13:44:06Z
+          TRAEFIK_PATCH_SHA256: 5026a6b4ae6b64d13564ab27f950e164988df21f78d204fcdfeb90509acefd7f
+          TRAEFIK_SOURCE_COMMIT: faa1eb590646aed94e561e24a59be0c47353ae95
+          TRAEFIK_VERSION: v3.7.11-gridora.1
         run: |
-          curl --fail --show-error --silent --location \
-            --output "$RUNNER_TEMP/traefik.tar.gz" \
-            "https://github.com/traefik/traefik/releases/download/v${TRAEFIK_VERSION}/traefik_v${TRAEFIK_VERSION}_linux_amd64.tar.gz"
-          printf '%s  %s\n' "$TRAEFIK_ARCHIVE_SHA256" "$RUNNER_TEMP/traefik.tar.gz" | sha256sum --check --strict
-          tar --extract --gzip --file "$RUNNER_TEMP/traefik.tar.gz" --directory "$RUNNER_TEMP" traefik
+          test "$(git -C .vendor/traefik rev-parse HEAD)" = "$TRAEFIK_SOURCE_COMMIT"
+          test "$(go env GOVERSION)" = go1.27.0
+          (
+            cd .vendor/traefik
+            go get \
+              go.etcd.io/etcd/api/v3@v3.6.14 \
+              go.etcd.io/etcd/client/pkg/v3@v3.6.14 \
+              go.etcd.io/etcd/client/v3@v3.6.14 \
+              github.com/valyala/fasthttp@v1.70.0
+            test "$(git diff --name-only)" = $'go.mod\ngo.sum'
+            patch_sha=$(git diff -- go.mod go.sum | sha256sum | cut -d ' ' -f 1)
+            test "$patch_sha" = "$TRAEFIK_PATCH_SHA256"
+            go mod verify
+            test "$(go list -m -f '{{.Version}}' go.etcd.io/etcd/api/v3)" = v3.6.14
+            test "$(go list -m -f '{{.Version}}' go.etcd.io/etcd/client/pkg/v3)" = v3.6.14
+            test "$(go list -m -f '{{.Version}}' go.etcd.io/etcd/client/v3)" = v3.6.14
+            test "$(go list -m -f '{{.Version}}' github.com/valyala/fasthttp)" = v1.70.0
+            CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
+              -trimpath \
+              -buildvcs=false \
+              -ldflags="-s -w -X github.com/traefik/traefik/v3/pkg/version.Version=$TRAEFIK_VERSION -X github.com/traefik/traefik/v3/pkg/version.Codename=cheddar -X github.com/traefik/traefik/v3/pkg/version.BuildDate=$TRAEFIK_BUILD_DATE" \
+              -installsuffix nocgo \
+              -o "$RUNNER_TEMP/traefik" \
+              ./cmd/traefik
+          )
           chmod 0755 "$RUNNER_TEMP/traefik"
+          go version -m "$RUNNER_TEMP/traefik" | grep -F ': go1.27.0'
+          go version -m "$RUNNER_TEMP/traefik" | grep -F $'\tdep\tgo.etcd.io/etcd/client/pkg/v3\tv3.6.14\t'
+          "$RUNNER_TEMP/traefik" version | grep -F "Version:      $TRAEFIK_VERSION"
+          "$RUNNER_TEMP/traefik" version | grep -F "Built:        $TRAEFIK_BUILD_DATE"
       - name: Validate the pinned Ubuntu source
         env:
           UBUNTU_ISO_URL: ${{ vars.UBUNTU_2404_ISO_URL }}
@@ -445,7 +478,6 @@ jobs:
           IMAGE_VERSION: ${{ github.run_id }}.${{ github.run_attempt }}
           NODE_ARCHIVE: ${{ runner.temp }}/node-runtime.tar.xz
           NODE_ARCHIVE_SHA256: 14b342e71204f811bde6153be8e04b62aef63c236fef92b55f9c83154b409647
-          TRAEFIK_ARCHIVE_SHA256: 0bd0b7152805af906a9feb5aec95e96322237d715ae89c4fe3adbbc07a63b631
           TRAEFIK_BINARY: ${{ runner.temp }}/traefik
           UBUNTU_ISO_URL: ${{ vars.UBUNTU_2404_ISO_URL }}
           UBUNTU_ISO_SHA256: ${{ vars.UBUNTU_2404_ISO_SHA256 }}
@@ -513,12 +545,17 @@ jobs:
             --arg cloudflaredGoVersion 1.27.0 \
             --arg node "$NODE_ARCHIVE_SHA256" \
             --arg traefik "$traefik_sha" \
-            --arg traefikArchive "$TRAEFIK_ARCHIVE_SHA256" \
+            --arg traefikGoVersion 1.27.0 \
+            --arg traefikPatchSha256 5026a6b4ae6b64d13564ab27f950e164988df21f78d204fcdfeb90509acefd7f \
+            --arg traefikSourceCommit faa1eb590646aed94e561e24a59be0c47353ae95 \
+            --arg traefikVersion v3.7.11-gridora.1 \
             --arg ubuntuIso "$UBUNTU_ISO_URL" \
             --arg ubuntu "$UBUNTU_ISO_SHA256" \
             '{commit: $commit, inputs: {agentSha256: $agent, cloudflaredSha256: $cloudflared,
               cloudflaredSourceCommit: $cloudflaredSourceCommit, cloudflaredGoVersion: $cloudflaredGoVersion,
-              nodeSha256: $node, traefikSha256: $traefik, traefikArchiveSha256: $traefikArchive,
+              nodeSha256: $node, traefikSha256: $traefik, traefikGoVersion: $traefikGoVersion,
+              traefikPatchSha256: $traefikPatchSha256, traefikSourceCommit: $traefikSourceCommit,
+              traefikVersion: $traefikVersion,
               ubuntuIsoUrl: $ubuntuIso, ubuntuIsoSha256: $ubuntu}}' \
             > "$image_path.inputs.json"
       - name: Check the QCOW2 artifact
