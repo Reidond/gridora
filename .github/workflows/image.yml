@@ -294,7 +294,7 @@ jobs:
           test -d /sys/module/quota_v2
           sudo unshare --mount --propagation private \
             bash infra/scripts/validate-project-quota.sh
-      - uses: anchore/sbom-action/download-syft@f8bdd1d8ac5e901a77a92f111440fdb1b593736b # v0.20.6
+      - uses: anchore/sbom-action/download-syft@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
         with:
           syft-version: v1.51.0
       - id: download-grype
