@@ -1,0 +1,17 @@
+{
+  "extraKnownMarketplaces": {
+    "lemmi": {
+      "source": {
+        "source": "github",
+        "repo": "lemmi-ukraine/lemmi-ai-kit"
+      }
+    }
+  },
+  "enabledPlugins": {
+    "lemmi-ai-kit-core@lemmi": true,
+    "lemmi-ai-kit-research@lemmi": true,
+    "lemmi-ai-kit-orchestration@lemmi": true,
+    "lemmi-ai-kit-skill-authoring@lemmi": true,
+    "lemmi-ai-kit-python@lemmi": false
+  }
+}

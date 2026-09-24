@@ -1,0 +1,25 @@
+# Project-scoped Codex configuration for Gridora.
+# Loaded only for trusted projects; each contributor trusts this repo once
+# (Codex prompts on first run).
+#
+# Registers the lemmi-ai-kit marketplace and enables the packs AGENTS.md relies
+# on. Gridora is TypeScript, so the Python conventions pack stays disabled.
+
+[marketplaces.lemmi]
+source_type = "git"
+source = "https://github.com/lemmi-ukraine/lemmi-ai-kit.git"
+
+[plugins."lemmi-ai-kit-core@lemmi"]
+enabled = true
+
+[plugins."lemmi-ai-kit-research@lemmi"]
+enabled = true
+
+[plugins."lemmi-ai-kit-orchestration@lemmi"]
+enabled = true
+
+[plugins."lemmi-ai-kit-skill-authoring@lemmi"]
+enabled = true
+
+[plugins."lemmi-ai-kit-python@lemmi"]
+enabled = false
