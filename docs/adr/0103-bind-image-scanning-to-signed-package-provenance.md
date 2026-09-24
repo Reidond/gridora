@@ -136,6 +136,11 @@ pending-upgrade gate refuses an image with any older pin, and the image
 workflow's `validate` job now runs `infra/scripts/check-docker-pins.sh` to fail
 on a stale pin before `build-local` starts.
 
+Amendment (2026-09-24, STE Step 139): the Traefik and cloudflared source
+commits track upstream releases and are re-pinned whenever the scan gate finds
+a fixed High vulnerability in them, with a SHA-256-fenced module update only
+when the upstream release still pins a vulnerable module.
+
 ## Verification
 
 Require Bash parsing, ShellCheck, workflow parsing, focused rootfs policy,

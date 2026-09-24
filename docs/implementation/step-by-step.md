@@ -4521,3 +4521,81 @@ token '<'` because the deployed Nuxt runtime had an empty API base.
 - Blocker: Do not tag or release until an exact-main replacement run produces
   the signed artifact and provider smoke succeeds.
 - Decision: ADR 0103.
+
+## Step 139: Rebuild Traefik and cloudflared with fixed Go modules
+
+- Status: local
+- Situation: Protected exact-main image run 36045727189 (`3a39e42`) built the
+  QCOW2, extracted the rootfs, and passed the package policy for the first
+  time. The unchanged Grype 0.117.0 gate (`--fail-on high --only-fixed`) then
+  failed on High findings in the Traefik and cloudflared binaries:
+  `google.golang.org/grpc` v1.82.1 and v1.83.0 (GHSA-2v4p-qf9q-27wj and
+  GHSA-vp52-pcj8-j9qc) and `golang.org/x/crypto` v0.53.0 and v0.55.0
+  (GO-2026-6303, GO-2026-6354, and GO-2026-6355). The run produced no signed
+  artifact, and provider smoke did not run.
+- Task: Build both binaries from current upstream releases. Keep the scan rule
+  and all findings unchanged.
+- Action: Move Traefik to release `v3.7.13`, commit
+  `fc92cc118a0557a029c7019d5ee06665127b0f13`, built 2026-09-04T08:48:05Z. Its
+  `go.mod` already pins grpc 1.83.2, `x/crypto` 0.56.0, and etcd 3.6.14.
+  Remove the Step 128 module update, `TRAEFIK_PATCH_SHA256`, and
+  `traefikPatchSha256`. Keep the etcd 3.6.14 binary assertion. Add binary
+  assertions for grpc 1.83.2 and `x/crypto` 0.56.0.
+- Action: Move cloudflared to release `2026.9.3`, commit
+  `96d39adbc812dc7363834bda908970c1a2560a72`, built 2026-09-24T15:31:10Z. This
+  commit has no `vendor/` directory, so build with `-mod=readonly` instead of
+  `-mod=vendor`.
+- Action: cloudflared 2026.9.3 still pins `x/crypto` v0.55.0. Run
+  `go get golang.org/x/crypto@v0.56.0` and `go mod tidy`. Require that only
+  `go.mod` and `go.sum` change. Require SHA-256
+  `78cdbc62c6a6fbd61c8868e9b3be76391f2487d226c3b663922806defc86d068` over the
+  updated `go.mod` bytes followed by the updated `go.sum` bytes before the
+  build. Then run `go mod verify` and assert `x/crypto` 0.56.0 and grpc 1.83.2
+  in the module graph and in the built binary.
+- Action: Record `cloudflaredPatchSha256`, the new source commits, and
+  Traefik version `v3.7.13` in the image inputs record. Keep Go 1.27.0.
+- Action: Add one ADR 0103 amendment sentence. The Traefik and cloudflared
+  source commits track upstream releases and are re-pinned when the scan gate
+  finds a fixed High vulnerability in them.
+- Result: The two binaries no longer contain the fixed High grpc and
+  `x/crypto` versions. Traefik needs no Gridora module update. The cloudflared
+  module update is one dependency and is fenced before the build.
+- Evidence: `.github/workflows/image.yml`, `tests/image/image-assets.test.ts`,
+  `tests/infrastructure/image-artifact-evidence.test.ts`, the failed protected
+  run 36045727189, and the ADR 0103 amendment note.
+- Evidence: The cloudflared module diff changes `go 1.26` to `go 1.26.0`,
+  `x/crypto` v0.55.0 to v0.56.0 in `go.mod`, and the two `x/crypto` lines in
+  `go.sum`. No other file changes.
+- Evidence: The fence hashes file bytes, not `git diff` text. The proof
+  sources came from GitHub source archives at the exact commits, and the proof
+  ran no Git commands. The file hash does not depend on abbreviated blob IDs.
+- Verification: The `golang:1.27.0` container toolchain (`go1.27.0`) built
+  both binaries for linux/amd64 with the workflow flags. The linux/arm64 and
+  the emulated linux/amd64 toolchain images produced identical binaries:
+  cloudflared SHA-256
+  `eff4cbd6f9464d9a1163acc64b376f6874515aae0d499926c42aed936b070baf` and
+  Traefik SHA-256
+  `a8b72589f5fba8babe594535fd911aa7c06243057a5e3051defe8b5e96a5c366`. Both
+  `version` commands print the pinned version and build time.
+- Verification: Syft 1.51.0 without the kernel cataloger produced SPDX
+  documents with 360 Traefik packages and 70 cloudflared packages. Grype
+  0.117.0 with `--fail-on high --only-fixed` and database v6.1.9 built
+  2026-09-24T06:31:52Z exits 0 for both. Traefik reports one Medium
+  (`otlploggrpc` v0.20.0) and four Low OpenTelemetry findings. cloudflared
+  reports one Unknown `klauspost/compress` v1.18.0 finding. The unpatched
+  cloudflared 2026.9.3 build fails the same gate on `x/crypto` v0.55.0
+  (GO-2026-6354 and GO-2026-6355 High).
+- Verification: ShellCheck 0.9.0 from the pinned
+  `infra/images/Dockerfile.validation` image passes for the changed cloudflared,
+  Traefik, and QCOW2 build steps. The focused image and rootfs-evidence tests
+  pass 37 tests, and 53 tests pass with the architecture tests. The new tests reject the old source commits, a vendored
+  cloudflared build, a Traefik module update or patch fence, and a
+  cloudflared build that does not follow the module fence. `pnpm check`
+  reports 950 formatted files and no lint or type errors across 536 files.
+  Under a host load average above 45, three unrelated
+  `tests/infrastructure/node-bootstrap.test.ts` tests exceeded the default
+  5-second timeout. With a 60-second limit, `pnpm test` passes 1,633 tests in
+  231 files, with 3 skipped. `pnpm build` completes 114 builds.
+- Blocker: Do not tag or release until an exact-main replacement run produces
+  the signed artifact and provider smoke succeeds.
+- Decision: ADR 0103.
