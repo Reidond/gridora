@@ -1,6 +1,6 @@
 # BUG: Downloaded image artifact fails checksum verification in the smoke job
 
-- Status: fixed-pending-image-run
+- Status: fixed (protected image run 36062117204 succeeded on 2026-09-24)
 - Found: 2026-09-24, protected image run 36056915150 (exact main `164d473`, `build_local_image=true`)
 - Owner: unassigned
 - Spec: `.specs/image-checksum-basenames/spec.md`

@@ -1,6 +1,6 @@
 # BUG: Node image scan fails on High Go-module findings in Traefik and cloudflared
 
-- Status: fixed-pending-image-run
+- Status: fixed (protected image run 36062117204 succeeded on 2026-09-24)
 - Found: 2026-09-24, protected image run 36045727189 (exact main `3a39e42`, `build_local_image=true`)
 - Owner: unassigned
 - Spec: `.specs/image-go-binary-refresh/spec.md`

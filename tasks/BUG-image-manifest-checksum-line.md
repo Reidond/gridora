@@ -1,6 +1,6 @@
 # BUG: Image promotion manifest step reads two checksum lines as one digest
 
-- Status: fixed-pending-image-run
+- Status: fixed (protected image run 36062117204 succeeded on 2026-09-24)
 - Found: 2026-09-24, protected image run 36052431439 (exact main `1ea272c`, `build_local_image=true`)
 - Owner: unassigned
 - Spec: `.specs/image-manifest-checksum-line/spec.md`
