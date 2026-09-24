@@ -399,7 +399,8 @@ printf 'fpr:::::::::${dockerFingerprint}:\n'
     )
     await writeFile(
       checksums,
-      `${digest(await readFile(artifact)).slice('sha256:'.length)}  ${artifact}\n${digest(await readFile(archive)).slice('sha256:'.length)}  ${archive}\n`,
+      // Basenames, as the build job writes them, so the file verifies from any directory.
+      `${digest(await readFile(artifact)).slice('sha256:'.length)}  node.qcow2\n${digest(await readFile(archive)).slice('sha256:'.length)}  node.qcow2.rootfs.tar\n`,
     )
     await writeFile(`${artifact}.sigstore.json`, '{"bundle":"fixture"}')
     await makeExecutable(
@@ -417,7 +418,8 @@ printf 'fpr:::::::::${dockerFingerprint}:\n'
       GRIDORA_TEST_COSIGN_LOG: cosignLog,
     }
 
-    await execute(verifyArtifact, [artifact, checksums, sbom, archive, evidence], { env })
+    // Run from a directory that holds none of the fixtures to prove the checksum file is portable.
+    await execute(verifyArtifact, [artifact, checksums, sbom, archive, evidence], { env, cwd: '/' })
     const invocation = await readFile(cosignLog, 'utf8')
     expect(invocation).toContain('verify-blob')
     expect(invocation).toContain(
@@ -425,7 +427,7 @@ printf 'fpr:::::::::${dockerFingerprint}:\n'
     )
     await writeFile(archive, 'tampered rootfs fixture')
     await expect(
-      execute(verifyArtifact, [artifact, checksums, sbom, archive, evidence], { env }),
+      execute(verifyArtifact, [artifact, checksums, sbom, archive, evidence], { env, cwd: '/' }),
     ).rejects.toMatchObject({
       code: expect.any(Number),
     })

@@ -4635,3 +4635,33 @@ token '<'` because the deployed Nuxt runtime had an empty API base.
 - Blocker: Do not tag or release until an exact-main replacement run produces
   the signed artifact and provider smoke succeeds.
 - Decision: ADR 0065.
+
+## Step 141: Make the image checksum file portable across jobs
+
+- Status: local
+- Situation: Protected exact-main image run 36056915150 produced, scanned,
+  signed, and uploaded the first Node image artifact. The
+  `provider-image-smoke` job downloaded it and failed the artifact verification
+  because `sha256sum --check` could not open
+  `dist/image-36056915150.1/gridora-node-36056915150.1-amd64.qcow2`.
+- Task: Make the checksum file verify wherever the artifact is downloaded.
+- Action: Write the checksum file from inside the image directory so each line
+  carries a basename. Select the image line by basename in the
+  promotion-manifest step.
+- Action: Make `infra/scripts/verify-artifact.sh` run `sha256sum --check` from
+  the checksum file's own directory.
+- Action: Make the evidence test write a basename checksum fixture and run the
+  verifier from a different working directory. Make the image-asset test
+  require the basename write and forbid the path-based write.
+- Result: The same checksum file verifies in the build job, the smoke job, and
+  any later download without depending on the caller's working directory.
+- Evidence: `.github/workflows/image.yml`, `infra/scripts/verify-artifact.sh`,
+  `tests/infrastructure/image-artifact-evidence.test.ts`,
+  `tests/image/image-assets.test.ts`, `tasks/BUG-image-checksum-basenames.md`,
+  run 36056915150, and ADR 0065.
+- Verification: The focused evidence and image-asset tests pass, including the
+  verifier run from another working directory. ShellCheck passes on the changed
+  script. The documentation record test and `pnpm check` pass.
+- Blocker: Do not tag or release until an exact-main replacement run produces
+  the signed artifact and provider smoke succeeds.
+- Decision: ADR 0065.

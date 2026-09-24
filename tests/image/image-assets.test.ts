@@ -66,13 +66,14 @@ describe('node image assets', () => {
     expect(workflow).not.toContain('- name: Create and scan supply-chain evidence')
   })
 
-  it('selects the image checksum line by path instead of the whole checksum file', () => {
+  it('writes basename checksums and selects the image line by basename', () => {
     const workflow = asset('.github/workflows/image.yml')
     expect(workflow).toContain(
-      `image_sha=$(awk -v path="$IMAGE_PATH" '$2 == path { print $1 }' "$IMAGE_PATH.sha256")`,
+      `image_sha=$(awk -v name="$(basename "$IMAGE_PATH")" '$2 == name { print $1 }' "$IMAGE_PATH.sha256")`,
     )
     expect(workflow).not.toContain(`image_sha=$(cut -d ' ' -f 1 "$IMAGE_PATH.sha256")`)
-    expect(workflow).toContain(
+    expect(workflow).toContain('sha256sum "$image" "$image.rootfs.tar" > "$image.sha256"')
+    expect(workflow).not.toContain(
       'sha256sum "$IMAGE_PATH" "$IMAGE_PATH.rootfs.tar" > "$IMAGE_PATH.sha256"',
     )
   })
