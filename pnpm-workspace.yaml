@@ -31,7 +31,7 @@ catalog:
   typescript: 7.0.2
   vite: 8.2.2
   vite-plus: 0.2.9
-  vitest: 4.1.10
+  vitest: 4.1.11
   wrangler: 4.125.0
   yaml: 2.9.0
 

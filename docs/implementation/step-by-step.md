@@ -4168,3 +4168,52 @@ token '<'` because the deployed Nuxt runtime had an empty API base.
 - Blocker: Do not tag or release until an exact-main replacement run produces
   the signed artifact and provider smoke succeeds.
 - Decision: ADR 0103.
+||||||| parent of 3c25db6 (chore(ci): refresh pinned actions and vitest, retire Dependabot PRs)
+
+## Step 132: Refresh pinned actions and retire Dependabot pull requests
+
+- Status: local
+- Situation: Step 130 deleted the Dependabot configuration. Six Dependabot
+  pull requests from 2026-08-24 stayed open, and their bumps were not in the
+  SHA-pinned `uses:` lines. Some pins had only a major-version comment, and the
+  `actions/setup-go` pin had a `v7.0.0` comment on the `v6.5.0` commit.
+- Task: Apply the proposed bumps in one reviewed change, and close the
+  orphaned pull requests.
+- Action: Resolve each upstream tag to its commit with `gh api` and dereference
+  annotated tags. Pin `actions/checkout` v7.0.1, `pnpm/action-setup` v6.0.10,
+  `sigstore/cosign-installer` v4.1.2, and `anchore/sbom-action/download-syft`
+  v0.24.0. Skip `actions/dependency-review-action` because no workflow uses it.
+- Action: Bump `anchore/scan-action/download-grype` from v7.4.0 to v7.4.2.
+  Give every other pin its exact release comment. Correct the `setup-go`
+  comment to `v6.5.0`. Keep Syft 1.51.0, Grype 0.117.0, Go 1.27.0, and pnpm
+  11.21.0 unchanged.
+- Action: Bump the `vitest` catalog entry from 4.1.10 to 4.1.11 and regenerate
+  `pnpm-lock.yaml`.
+- Result: All 26 `uses:` lines carry a full commit SHA and an exact release
+  comment. `cosign-installer` v4.1.2 installs Cosign v3.0.6 by default. The
+  signing and verification scripts already use `--bundle`, which Cosign v3
+  requires.
+- Evidence: `.github/workflows/ci.yml`, `.github/workflows/image.yml`,
+  `.github/workflows/release.yml`, `pnpm-workspace.yaml`, `pnpm-lock.yaml`,
+  and `.specs/github-actions-pin-refresh/spec.md`. Resolved commits:
+  `actions/checkout` v7.0.1 `3d3c42e5aac5ba805825da76410c181273ba90b1`,
+  `pnpm/action-setup` v6.0.10 `0977fd99725f1db4007ccb2928dbb4e90d06cc86`,
+  `sigstore/cosign-installer` v4.1.2 `6f9f17788090df1f26f669e9d70d6ae9567deba6`,
+  `anchore/sbom-action` v0.24.0 `e22c389904149dbc22b58101806040fa8d37a610`,
+  and `anchore/scan-action` v7.4.2 `27805bf3b4e84b4a5c980df22ed233c00390a439`.
+- Verification: `pnpm install --frozen-lockfile` passes. The complete local
+  gate reports 920 formatted files, zero lint or type errors across 522 files,
+  and 112 successful builds. Workflow, image, artifact-evidence, and
+  documentation tests pass 34 assertions. The full local test run passes 1,488
+  tests. It reports 20 failures, and each failure is a 5-second timeout. The
+  host load average was above 140 on 12 cores. The eight affected files pass
+  all 52 tests with a 60-second timeout. Pull-request CI is the authority for
+  the complete suite.
+- Blocker: The manual Node image and tag-only Release workflows do not run on
+  pull requests. The first Cosign v3 signing proof occurs in the next manual
+  image run. Major bumps not applied: `actions/setup-node` v5 to v7,
+  `actions/setup-go` v6 to v7, `actions/upload-artifact` v4 to v7, and
+  `actions/download-artifact` v4 to v8. Newer releases `pnpm/action-setup`
+  v6.1.0 and `anchore/sbom-action` v0.24.2 exist. This change keeps the
+  releases that the Dependabot pull requests proposed.
+- Decision: ADR 0105.
