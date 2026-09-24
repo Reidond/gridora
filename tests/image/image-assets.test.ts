@@ -66,6 +66,17 @@ describe('node image assets', () => {
     expect(workflow).not.toContain('- name: Create and scan supply-chain evidence')
   })
 
+  it('selects the image checksum line by path instead of the whole checksum file', () => {
+    const workflow = asset('.github/workflows/image.yml')
+    expect(workflow).toContain(
+      `image_sha=$(awk -v path="$IMAGE_PATH" '$2 == path { print $1 }' "$IMAGE_PATH.sha256")`,
+    )
+    expect(workflow).not.toContain(`image_sha=$(cut -d ' ' -f 1 "$IMAGE_PATH.sha256")`)
+    expect(workflow).toContain(
+      'sha256sum "$IMAGE_PATH" "$IMAGE_PATH.rootfs.tar" > "$IMAGE_PATH.sha256"',
+    )
+  })
+
   it('passes the pinned Grype command output into the rootfs scanner', () => {
     const workflow = asset('.github/workflows/image.yml')
     const scanner = asset('infra/scripts/scan-artifact.sh')

@@ -606,7 +606,12 @@ jobs:
           cp "$RUNNER_TEMP/identity.json" "$IMAGE_PATH.identity.json"
           cp "$RUNNER_TEMP/identity.sig" "$IMAGE_PATH.identity.sig"
           cp "$RUNNER_TEMP/identity-public.pem" "$IMAGE_PATH.identity-public.pem"
-          image_sha=$(cut -d ' ' -f 1 "$IMAGE_PATH.sha256")
+          # The checksum file lists the image and the rootfs archive; select the image line only.
+          image_sha=$(awk -v path="$IMAGE_PATH" '$2 == path { print $1 }' "$IMAGE_PATH.sha256")
+          [[ "$image_sha" =~ ^[a-f0-9]{64}$ ]] || {
+            echo "no single checksum line for $IMAGE_PATH in $IMAGE_PATH.sha256" >&2
+            exit 1
+          }
           identity_manifest_sha=$(sha256sum "$IMAGE_PATH.identity.json" | cut -d ' ' -f 1)
           identity_signature_sha=$(sha256sum "$IMAGE_PATH.identity.sig" | cut -d ' ' -f 1)
           identity_public_key_sha=$(sha256sum "$IMAGE_PATH.identity-public.pem" | cut -d ' ' -f 1)
