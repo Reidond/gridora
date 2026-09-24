@@ -29,7 +29,7 @@
 
 ## Visual evidence
 
-Take a before/after screenshot of the server page rename control with the web dev server and a local fake API mode if one exists (`apps/web/utils/gridora.ts`, `nuxt.config.ts` API mode). Commit under `docs/qa/game-server-rename/` and reference in the PR body. Skip with an explicit note if no local rendering path exists.
+Take a before/after screenshot of the server page rename control with the web dev server and a local fake API mode if one exists (`apps/web/utils/gridora.ts`, `nuxt.config.ts` API mode). Attach to the PR with `gh pr comment --attach` (never commit image files) and reference the comment in the PR body. Skip with an explicit note if no local rendering path exists.
 
 ## Test requirements
 
