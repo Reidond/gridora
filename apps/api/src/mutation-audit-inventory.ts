@@ -376,7 +376,6 @@ export const mutationInventoryReport = () => {
         apiMutationAuditInventory.find((entry) => entry.operationId === route.operationId)
           ?.state === 'blocked-before-side-effects',
     )
-    .filter((route) => route.successStatus !== 501)
     .map((route) => route.operationId)
   const conversionInProgress = [...apiMutationAuditInventory, ...nonHttpAuditMutationInventory]
     .filter((entry) => entry.state === 'conversion-in-progress')

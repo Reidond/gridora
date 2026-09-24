@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { Schema } from 'effect'
 import {
   AgentRegistrationExchangeResponse,
+  apiRoutes,
   openApiDocument,
   unsupportedApiRoutes,
 } from '../src/contracts.js'
@@ -44,6 +45,19 @@ describe('agent observation and organization realtime contracts', () => {
       expect(paths[path]).toBeUndefined()
       expect(unsupportedApiRoutes.some((route) => route.path === path)).toBe(false)
     }
+  })
+
+  it('declares no public 501 route and no game-server action catch-all', () => {
+    expect(
+      [...apiRoutes, ...unsupportedApiRoutes].filter((route) => route.successStatus === 501),
+    ).toEqual([])
+    const paths = openApiDocument.paths as Readonly<
+      Record<string, Readonly<Record<string, OpenApiOperation>>>
+    >
+    expect(Object.keys(paths).filter((path) => path.includes('*'))).toEqual([])
+    for (const operations of Object.values(paths))
+      for (const value of Object.values(operations))
+        expect(Object.keys(value.responses)).not.toContain('501')
   })
 
   it('publishes strict machine-bearer observation ingestion without idempotency', () => {
