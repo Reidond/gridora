@@ -15,6 +15,7 @@ export default defineConfig({
       '**/dist/**',
       '**/node_modules/**',
       '**/worker-configuration.d.ts',
+      '.agents/skills/**',
       'PRODUCT.md',
       'pnpm-lock.yaml',
     ],
