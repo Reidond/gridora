@@ -1,3 +1,4 @@
+import { spawnSync } from 'node:child_process'
 import { readFileSync, readdirSync } from 'node:fs'
 import { resolve } from 'node:path'
 
@@ -44,16 +45,20 @@ describe('release workflow evidence', () => {
     })
     expect(workflow.on.workflow_dispatch.inputs.provider_image_smoke_provider).toMatchObject({
       type: 'choice',
-      options: ['simulated'],
+      options: ['simulated', 'ovh', 'contabo'],
       default: 'simulated',
+    })
+    expect(workflow.on.workflow_dispatch.inputs.live_test).toMatchObject({
+      type: 'boolean',
+      default: false,
     })
     expect(smoke).toMatchObject({
       name: 'provider-image-smoke',
       needs: 'build-local',
-      'timeout-minutes': 60,
+      environment: 'image-signing',
+      'timeout-minutes': 90,
       permissions: { contents: 'read', 'id-token': 'write' },
     })
-    expect(smoke.environment).toBeUndefined()
     expect(smoke.if).toContain("github.event_name == 'workflow_dispatch'")
     expect(smoke.if).toContain('inputs.build_local_image')
     expect(smoke.if).toContain("github.ref == 'refs/heads/main'")
@@ -62,6 +67,8 @@ describe('release workflow evidence', () => {
         'Validate bounded simulated smoke inputs',
         'Verify the exact signed artifact selected for smoke',
         'Exercise Arma lifecycle on the disposable VPS simulation',
+        'Run the paid provider image smoke',
+        'Remove the short-lived artifact locator',
       ]),
     )
     const source = read('.github/workflows/image.yml')
@@ -69,6 +76,64 @@ describe('release workflow evidence', () => {
     expect(source).toContain('pnpm test:arma-sim')
     expect(source).toContain('paid provider mutation: not performed')
     expect(source).toContain('deterministic reviewed stand-in, not Bohemia binaries')
+  })
+
+  it('gates the paid provider smoke on live_test before any provider call', () => {
+    const workflow = parse(read('.github/workflows/image.yml'))
+    const steps: {
+      name?: string
+      if?: string
+      run?: string
+      env?: Record<string, string>
+      uses?: string
+    }[] = workflow.jobs['provider-image-smoke'].steps
+    const index = (name: string) => steps.findIndex((step) => step.name === name)
+    const gateIndex = index('Require the live-test gate for a paid provider')
+    const gate = steps[gateIndex]!
+    // The gate runs unconditionally and before the artifact download or any paid step.
+    expect(gate.if).toBeUndefined()
+    const download = steps.findIndex((step) => step.uses?.startsWith('actions/download-artifact'))
+    expect(gateIndex).toBeGreaterThan(-1)
+    expect(gateIndex).toBeLessThan(download)
+    expect(gateIndex).toBeLessThan(index('Run the paid provider image smoke'))
+    const runGate = (provider: string, liveTest: string) =>
+      spawnSync('bash', ['-euo', 'pipefail', '-c', gate.run!], {
+        env: { PATH: process.env.PATH, PROVIDER: provider, LIVE_TEST: liveTest },
+        encoding: 'utf8',
+      })
+    for (const provider of ['ovh', 'contabo']) {
+      const denied = runGate(provider, 'false')
+      expect(denied.status).toBe(1)
+      expect(denied.stderr).toContain('requires live_test=true; no provider call was made')
+      expect(runGate(provider, 'true').status).toBe(0)
+    }
+    expect(runGate('simulated', 'false').status).toBe(0)
+    expect(runGate('hetzner', 'true').status).toBe(1)
+
+    // The simulated lane keeps its original validation and simulation steps only.
+    expect(steps[index('Validate bounded simulated smoke inputs')]!.if).toBe(
+      "inputs.provider_image_smoke_provider == 'simulated'",
+    )
+    expect(steps[index('Exercise Arma lifecycle on the disposable VPS simulation')]!.if).toBe(
+      "inputs.provider_image_smoke_provider == 'simulated'",
+    )
+    const paid = steps[index('Run the paid provider image smoke')]!
+    expect(paid.if).toBe("inputs.provider_image_smoke_provider != 'simulated' && inputs.live_test")
+    expect(paid.run).toContain('node infra/scripts/run-provider-image-smoke.mjs')
+    expect(paid.run).toContain('echo "::add-mask::$locator"')
+    expect(paid.run).not.toContain('set -x')
+    expect(paid.run).not.toMatch(/echo "?\$\{?(AWS_SECRET|GRIDORA_SMOKE_(OVH|CONTABO))/)
+    expect(paid.env?.GRIDORA_LIVE_TEST).toBe('${{ inputs.live_test }}')
+    for (const [name, value] of Object.entries(paid.env ?? {}))
+      if (value.includes('secrets.'))
+        expect(value, `${name} must come from an image-signing secret`).toMatch(
+          /secrets\.GRIDORA_SMOKE_[A-Z0-9_]+/,
+        )
+    const cleanupIndex = index('Remove the short-lived artifact locator')
+    expect(steps[cleanupIndex]!.if).toBe(
+      "always() && inputs.provider_image_smoke_provider != 'simulated' && inputs.live_test",
+    )
+    expect(cleanupIndex).toBeGreaterThan(index('Run the paid provider image smoke'))
   })
 
   it('separates read-only evidence verification from release publication', () => {

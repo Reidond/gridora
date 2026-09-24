@@ -5,7 +5,7 @@ import {
   type JsonHttpClientShape,
   type ProviderNode,
 } from '@gridora/provider-sdk'
-import type { ContaboApi, ContaboApiError } from './index.js'
+import type { ContaboApi, ContaboApiError, ContaboCustomImage } from './index.js'
 
 export interface ContaboHttpOptions {
   readonly contractPeriodMonths: 1 | 12 | 24
@@ -258,6 +258,23 @@ const matchesLabels = (node: ProviderNode, labels: Readonly<Record<string, strin
   }
   return Object.entries(labels).every(([key, expected]) => values[key] === expected)
 }
+const decodeCustomImage = (item: unknown): Effect.Effect<ContaboCustomImage, ContaboApiError> => {
+  const id = text(item, 'imageId')
+  const name = text(item, 'name')
+  if (id === undefined || name === undefined)
+    return Effect.fail(error('invalid Contabo custom image'))
+  const status = text(item, 'status')?.toLowerCase()
+  return Effect.succeed({
+    id,
+    name,
+    description: text(item, 'description') ?? '',
+    status:
+      status === 'downloading' || status === 'downloaded' || status === 'error'
+        ? status
+        : 'unknown',
+  })
+}
+const imagePath = (id: string) => `/v1/compute/images/${encodeURIComponent(id)}`
 export const makeContaboHttpApi = (
   http: JsonHttpClientShape,
   options: ContaboHttpOptions,
@@ -396,6 +413,33 @@ export const makeContaboHttpApi = (
       ),
       undefined,
     ),
+  customImages: () =>
+    Effect.flatMap(
+      paginatedData(http, options.requestId, '/v1/compute/images?standardImage=false'),
+      (items) => Effect.forEach(items, decodeCustomImage),
+    ),
+  importImage: (input) =>
+    Effect.flatMap(
+      request(http, options.requestId, 'POST', '/v1/compute/images', {
+        name: input.name,
+        description: input.description,
+        url: input.url,
+        osType: 'Linux',
+        version: input.version,
+      }),
+      (response) =>
+        Effect.flatMap(data(response.body), (items) =>
+          Effect.flatMap(first(items, 'Contabo image response is empty'), decodeCustomImage),
+        ),
+    ),
+  getImage: (id) =>
+    Effect.flatMap(request(http, options.requestId, 'GET', imagePath(id)), (response) =>
+      Effect.flatMap(data(response.body), (items) =>
+        Effect.flatMap(first(items, 'Contabo image response is empty'), decodeCustomImage),
+      ),
+    ),
+  deleteImage: (id) =>
+    Effect.as(request(http, options.requestId, 'DELETE', imagePath(id)), undefined),
   replaceFirewall: (id, rules) => {
     const firewallId = options.firewallIdForInstance(id)
     const ownership = options.firewallOwnershipDescription(id)

@@ -28,6 +28,21 @@ export interface OvhApiError {
   readonly message: string
   readonly retryAfterSeconds?: number
 }
+/** A Glance custom image. `properties` holds only string-valued image properties. */
+export interface OvhCustomImage {
+  readonly id: string
+  readonly name: string
+  readonly status: 'queued' | 'importing' | 'active' | 'failed' | 'deleted' | 'unknown'
+  readonly architecture: 'amd64' | 'arm64'
+  readonly properties: Readonly<Record<string, string>>
+}
+export interface OvhImageImportInput {
+  readonly name: string
+  readonly architecture: 'amd64'
+  /** Short-lived HTTPS locator. The adapter sends it once and never returns it. */
+  readonly sourceUrl: string
+  readonly properties: Readonly<Record<string, string>>
+}
 export interface OvhOpenStackApi {
   readonly regions: () => Effect.Effect<readonly { id: string; name: string }[], OvhApiError>
   readonly flavors: (region?: string) => Effect.Effect<
@@ -74,6 +89,11 @@ export interface OvhOpenStackApi {
     id: string,
     rules: readonly unknown[],
   ) => Effect.Effect<void, OvhApiError>
+  /** Glance custom-image operations. They are absent when no image endpoint is configured. */
+  readonly customImages?: (name: string) => Effect.Effect<readonly OvhCustomImage[], OvhApiError>
+  readonly importImage?: (input: OvhImageImportInput) => Effect.Effect<OvhCustomImage, OvhApiError>
+  readonly getImage?: (id: string) => Effect.Effect<OvhCustomImage, OvhApiError>
+  readonly deleteImage?: (id: string) => Effect.Effect<void, OvhApiError>
 }
 
 export const capabilities: ProviderCapabilities = {
