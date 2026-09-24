@@ -127,7 +127,7 @@ const rootfsArchive = async (
     status,
     [
       'Package: gridora-agent\nVersion: 1.0.0',
-      'Package: cloudflared\nVersion: 2026.8.2',
+      'Package: cloudflared\nVersion: 2026.9.3',
       ...dockerPackages.map(({ name, version }) => `Package: ${name}\nVersion: ${version}`),
     ].join('\n\n') + '\n',
   )

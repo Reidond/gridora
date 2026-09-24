@@ -80,25 +80,92 @@ describe('node image assets', () => {
   it('builds cloudflared from the exact release source with the fixed Go toolchain', () => {
     const workflow = asset('.github/workflows/image.yml')
     expect(workflow).toContain('repository: cloudflare/cloudflared')
-    expect(workflow).toContain('ref: 733bfb939963e150dcf5c4faddb1603f744fbc98')
+    expect(workflow).toContain('ref: 96d39adbc812dc7363834bda908970c1a2560a72')
+    expect(workflow).toContain(
+      'CLOUDFLARED_SOURCE_COMMIT: 96d39adbc812dc7363834bda908970c1a2560a72',
+    )
+    expect(workflow).toContain('CLOUDFLARED_VERSION: 2026.9.3')
+    expect(workflow).toContain('CLOUDFLARED_BUILD_TIME: 2026-09-24T15:31:10Z')
     expect(workflow).toContain("go-version: '1.27.0'")
     expect(workflow).toContain('CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build')
-    expect(workflow).toContain('-mod=vendor')
+    expect(workflow).toContain('-mod=readonly')
     expect(workflow).toContain('-buildvcs=false')
+    expect(workflow).not.toContain('-mod=vendor')
+    expect(workflow).not.toContain('733bfb939963e150dcf5c4faddb1603f744fbc98')
     expect(workflow).not.toContain('cloudflared/releases/download')
   })
 
-  it('builds Traefik from the exact release source with fixed modules', () => {
+  it('fences the cloudflared module update before the build', () => {
     const workflow = asset('.github/workflows/image.yml')
-    expect(workflow).toContain('repository: traefik/traefik')
-    expect(workflow).toContain('ref: faa1eb590646aed94e561e24a59be0c47353ae95')
-    expect(workflow).toContain('go.etcd.io/etcd/client/pkg/v3@v3.6.14')
-    expect(workflow).toContain('github.com/valyala/fasthttp@v1.70.0')
-    expect(workflow).toContain(
-      'TRAEFIK_PATCH_SHA256: 5026a6b4ae6b64d13564ab27f950e164988df21f78d204fcdfeb90509acefd7f',
+    const start = workflow.indexOf(
+      '- name: Build cloudflared from exact reviewed source and fixed modules',
     )
-    expect(workflow).toContain('TRAEFIK_VERSION: v3.7.11-gridora.1')
+    const end = workflow.indexOf('- name: Build Traefik from exact reviewed source')
+    expect(start).toBeGreaterThan(-1)
+    expect(end).toBeGreaterThan(start)
+    const step = workflow.slice(start, end)
+    const fence = step.indexOf('test "$patch_sha" = "$CLOUDFLARED_PATCH_SHA256"')
+    const build = step.indexOf('CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build')
+    expect(step).toContain(
+      'CLOUDFLARED_PATCH_SHA256: 78cdbc62c6a6fbd61c8868e9b3be76391f2487d226c3b663922806defc86d068',
+    )
+    expect(step).toContain('go get golang.org/x/crypto@v0.56.0')
+    expect(step).toContain('go mod tidy')
+    expect(step).toContain(`test "$(git diff --name-only)" = $'go.mod\\ngo.sum'`)
+    expect(step).toContain("patch_sha=$(cat go.mod go.sum | sha256sum | cut -d ' ' -f 1)")
+    expect(step).toContain('go mod verify')
+    expect(fence).toBeGreaterThan(-1)
+    expect(build).toBeGreaterThan(fence)
+    expect(step).toContain(`test "$(go list -m -f '{{.Version}}' golang.org/x/crypto)" = v0.56.0`)
+    expect(step).toContain(
+      `test "$(go list -m -f '{{.Version}}' google.golang.org/grpc)" = v1.83.2`,
+    )
+    expect(step).toContain(
+      `go version -m "$RUNNER_TEMP/cloudflared" | grep -F $'\\tdep\\tgolang.org/x/crypto\\tv0.56.0\\t'`,
+    )
+    expect(step).toContain(
+      `go version -m "$RUNNER_TEMP/cloudflared" | grep -F $'\\tdep\\tgoogle.golang.org/grpc\\tv1.83.2\\t'`,
+    )
+    expect(workflow).toContain(
+      '--arg cloudflaredPatchSha256 78cdbc62c6a6fbd61c8868e9b3be76391f2487d226c3b663922806defc86d068',
+    )
+    expect(workflow).toContain(
+      '--arg cloudflaredSourceCommit 96d39adbc812dc7363834bda908970c1a2560a72',
+    )
+    expect(workflow).toContain('cloudflaredPatchSha256: $cloudflaredPatchSha256')
+  })
+
+  it('builds Traefik from the exact unpatched release source', () => {
+    const workflow = asset('.github/workflows/image.yml')
+    const start = workflow.indexOf('- name: Build Traefik from exact reviewed source')
+    const end = workflow.indexOf('- name: Validate the pinned Ubuntu source')
+    expect(start).toBeGreaterThan(-1)
+    expect(end).toBeGreaterThan(start)
+    const step = workflow.slice(start, end)
+    expect(workflow).toContain('repository: traefik/traefik')
+    expect(workflow).toContain('ref: fc92cc118a0557a029c7019d5ee06665127b0f13')
+    expect(step).toContain('TRAEFIK_SOURCE_COMMIT: fc92cc118a0557a029c7019d5ee06665127b0f13')
+    expect(step).toContain('TRAEFIK_VERSION: v3.7.13')
+    expect(step).toContain('TRAEFIK_BUILD_DATE: 2026-09-04T08:48:05Z')
+    expect(step).toContain('go mod verify')
+    expect(step).toContain(
+      `go version -m "$RUNNER_TEMP/traefik" | grep -F $'\\tdep\\tgo.etcd.io/etcd/client/pkg/v3\\tv3.6.14\\t'`,
+    )
+    expect(step).toContain(
+      `go version -m "$RUNNER_TEMP/traefik" | grep -F $'\\tdep\\tgolang.org/x/crypto\\tv0.56.0\\t'`,
+    )
+    expect(step).toContain(
+      `go version -m "$RUNNER_TEMP/traefik" | grep -F $'\\tdep\\tgoogle.golang.org/grpc\\tv1.83.2\\t'`,
+    )
+    expect(step).not.toContain('go get')
+    expect(step).not.toContain('git diff')
+    expect(workflow).toContain('--arg traefikSourceCommit fc92cc118a0557a029c7019d5ee06665127b0f13')
+    expect(workflow).toContain('--arg traefikVersion v3.7.13')
     expect(workflow).toContain('traefikGoVersion: $traefikGoVersion')
+    expect(workflow).not.toContain('TRAEFIK_PATCH_SHA256')
+    expect(workflow).not.toContain('traefikPatchSha256')
+    expect(workflow).not.toContain('faa1eb590646aed94e561e24a59be0c47353ae95')
+    expect(workflow).not.toContain('gridora.1')
     expect(workflow).not.toContain('traefik/traefik/releases/download')
     expect(workflow).not.toContain('traefikArchiveSha256')
   })

@@ -238,14 +238,14 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: cloudflare/cloudflared
-          ref: 733bfb939963e150dcf5c4faddb1603f744fbc98
+          ref: 96d39adbc812dc7363834bda908970c1a2560a72
           path: .vendor/cloudflared
           persist-credentials: false
       - name: Checkout the exact Traefik source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: traefik/traefik
-          ref: faa1eb590646aed94e561e24a59be0c47353ae95
+          ref: fc92cc118a0557a029c7019d5ee06665127b0f13
           path: .vendor/traefik
           persist-credentials: false
       - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
@@ -318,18 +318,31 @@ jobs:
             --output "$RUNNER_TEMP/node-runtime.tar.xz" \
             "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz"
           printf '%s  %s\n' "$NODE_ARCHIVE_SHA256" "$RUNNER_TEMP/node-runtime.tar.xz" | sha256sum --check --strict
-      - name: Build cloudflared from exact reviewed source
+      # The module fence hashes the updated go.mod bytes followed by the updated
+      # go.sum bytes, not `git diff` text. The pinned source commit fixes the
+      # original files, so the fence still binds the exact module diff, and it
+      # does not depend on the checkout's abbreviated blob IDs.
+      - name: Build cloudflared from exact reviewed source and fixed modules
         env:
-          CLOUDFLARED_BUILD_TIME: 2026-08-14T11:22:52Z
-          CLOUDFLARED_SOURCE_COMMIT: 733bfb939963e150dcf5c4faddb1603f744fbc98
-          CLOUDFLARED_VERSION: 2026.8.2
+          CLOUDFLARED_BUILD_TIME: 2026-09-24T15:31:10Z
+          CLOUDFLARED_PATCH_SHA256: 78cdbc62c6a6fbd61c8868e9b3be76391f2487d226c3b663922806defc86d068
+          CLOUDFLARED_SOURCE_COMMIT: 96d39adbc812dc7363834bda908970c1a2560a72
+          CLOUDFLARED_VERSION: 2026.9.3
         run: |
           test "$(git -C .vendor/cloudflared rev-parse HEAD)" = "$CLOUDFLARED_SOURCE_COMMIT"
           test "$(go env GOVERSION)" = go1.27.0
           (
             cd .vendor/cloudflared
+            go get golang.org/x/crypto@v0.56.0
+            go mod tidy
+            test "$(git diff --name-only)" = $'go.mod\ngo.sum'
+            patch_sha=$(cat go.mod go.sum | sha256sum | cut -d ' ' -f 1)
+            test "$patch_sha" = "$CLOUDFLARED_PATCH_SHA256"
+            go mod verify
+            test "$(go list -m -f '{{.Version}}' golang.org/x/crypto)" = v0.56.0
+            test "$(go list -m -f '{{.Version}}' google.golang.org/grpc)" = v1.83.2
             CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
-              -mod=vendor \
+              -mod=readonly \
               -trimpath \
               -buildvcs=false \
               -ldflags="-s -w -X main.Version=$CLOUDFLARED_VERSION -X main.BuildTime=$CLOUDFLARED_BUILD_TIME" \
@@ -338,34 +351,26 @@ jobs:
           )
           chmod 0755 "$RUNNER_TEMP/cloudflared"
           go version -m "$RUNNER_TEMP/cloudflared" | grep -F ': go1.27.0'
+          go version -m "$RUNNER_TEMP/cloudflared" | grep -F $'\tdep\tgolang.org/x/crypto\tv0.56.0\t'
+          go version -m "$RUNNER_TEMP/cloudflared" | grep -F $'\tdep\tgoogle.golang.org/grpc\tv1.83.2\t'
           "$RUNNER_TEMP/cloudflared" version | grep -F \
             "cloudflared version $CLOUDFLARED_VERSION (built $CLOUDFLARED_BUILD_TIME)"
           cloudflared_sha=$(sha256sum "$RUNNER_TEMP/cloudflared" | cut -d ' ' -f 1)
           echo "CLOUDFLARED_SHA256=$cloudflared_sha" >> "$GITHUB_ENV"
-      - name: Build Traefik from exact reviewed source and fixed modules
+      - name: Build Traefik from exact reviewed source
         env:
-          TRAEFIK_BUILD_DATE: 2026-08-18T13:44:06Z
-          TRAEFIK_PATCH_SHA256: 5026a6b4ae6b64d13564ab27f950e164988df21f78d204fcdfeb90509acefd7f
-          TRAEFIK_SOURCE_COMMIT: faa1eb590646aed94e561e24a59be0c47353ae95
-          TRAEFIK_VERSION: v3.7.11-gridora.1
+          TRAEFIK_BUILD_DATE: 2026-09-04T08:48:05Z
+          TRAEFIK_SOURCE_COMMIT: fc92cc118a0557a029c7019d5ee06665127b0f13
+          TRAEFIK_VERSION: v3.7.13
         run: |
           test "$(git -C .vendor/traefik rev-parse HEAD)" = "$TRAEFIK_SOURCE_COMMIT"
           test "$(go env GOVERSION)" = go1.27.0
           (
             cd .vendor/traefik
-            go get \
-              go.etcd.io/etcd/api/v3@v3.6.14 \
-              go.etcd.io/etcd/client/pkg/v3@v3.6.14 \
-              go.etcd.io/etcd/client/v3@v3.6.14 \
-              github.com/valyala/fasthttp@v1.70.0
-            test "$(git diff --name-only)" = $'go.mod\ngo.sum'
-            patch_sha=$(git diff -- go.mod go.sum | sha256sum | cut -d ' ' -f 1)
-            test "$patch_sha" = "$TRAEFIK_PATCH_SHA256"
             go mod verify
-            test "$(go list -m -f '{{.Version}}' go.etcd.io/etcd/api/v3)" = v3.6.14
             test "$(go list -m -f '{{.Version}}' go.etcd.io/etcd/client/pkg/v3)" = v3.6.14
-            test "$(go list -m -f '{{.Version}}' go.etcd.io/etcd/client/v3)" = v3.6.14
-            test "$(go list -m -f '{{.Version}}' github.com/valyala/fasthttp)" = v1.70.0
+            test "$(go list -m -f '{{.Version}}' golang.org/x/crypto)" = v0.56.0
+            test "$(go list -m -f '{{.Version}}' google.golang.org/grpc)" = v1.83.2
             CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
               -trimpath \
               -buildvcs=false \
@@ -377,6 +382,8 @@ jobs:
           chmod 0755 "$RUNNER_TEMP/traefik"
           go version -m "$RUNNER_TEMP/traefik" | grep -F ': go1.27.0'
           go version -m "$RUNNER_TEMP/traefik" | grep -F $'\tdep\tgo.etcd.io/etcd/client/pkg/v3\tv3.6.14\t'
+          go version -m "$RUNNER_TEMP/traefik" | grep -F $'\tdep\tgolang.org/x/crypto\tv0.56.0\t'
+          go version -m "$RUNNER_TEMP/traefik" | grep -F $'\tdep\tgoogle.golang.org/grpc\tv1.83.2\t'
           "$RUNNER_TEMP/traefik" version | grep -F "Version:      $TRAEFIK_VERSION"
           "$RUNNER_TEMP/traefik" version | grep -F "Built:        $TRAEFIK_BUILD_DATE"
       - name: Validate the pinned Ubuntu source
@@ -538,21 +545,21 @@ jobs:
             --arg commit "$GITHUB_SHA" \
             --arg agent "$agent_sha" \
             --arg cloudflared "$CLOUDFLARED_SHA256" \
-            --arg cloudflaredSourceCommit 733bfb939963e150dcf5c4faddb1603f744fbc98 \
+            --arg cloudflaredSourceCommit 96d39adbc812dc7363834bda908970c1a2560a72 \
+            --arg cloudflaredPatchSha256 78cdbc62c6a6fbd61c8868e9b3be76391f2487d226c3b663922806defc86d068 \
             --arg cloudflaredGoVersion 1.27.0 \
             --arg node "$NODE_ARCHIVE_SHA256" \
             --arg traefik "$traefik_sha" \
             --arg traefikGoVersion 1.27.0 \
-            --arg traefikPatchSha256 5026a6b4ae6b64d13564ab27f950e164988df21f78d204fcdfeb90509acefd7f \
-            --arg traefikSourceCommit faa1eb590646aed94e561e24a59be0c47353ae95 \
-            --arg traefikVersion v3.7.11-gridora.1 \
+            --arg traefikSourceCommit fc92cc118a0557a029c7019d5ee06665127b0f13 \
+            --arg traefikVersion v3.7.13 \
             --arg ubuntuIso "$UBUNTU_ISO_URL" \
             --arg ubuntu "$UBUNTU_ISO_SHA256" \
             '{commit: $commit, inputs: {agentSha256: $agent, cloudflaredSha256: $cloudflared,
-              cloudflaredSourceCommit: $cloudflaredSourceCommit, cloudflaredGoVersion: $cloudflaredGoVersion,
+              cloudflaredSourceCommit: $cloudflaredSourceCommit,
+              cloudflaredPatchSha256: $cloudflaredPatchSha256, cloudflaredGoVersion: $cloudflaredGoVersion,
               nodeSha256: $node, traefikSha256: $traefik, traefikGoVersion: $traefikGoVersion,
-              traefikPatchSha256: $traefikPatchSha256, traefikSourceCommit: $traefikSourceCommit,
-              traefikVersion: $traefikVersion,
+              traefikSourceCommit: $traefikSourceCommit, traefikVersion: $traefikVersion,
               ubuntuIsoUrl: $ubuntuIso, ubuntuIsoSha256: $ubuntu}}' \
             > "$image_path.inputs.json"
       - name: Check the QCOW2 artifact
