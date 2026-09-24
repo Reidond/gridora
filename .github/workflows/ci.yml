@@ -34,6 +34,8 @@ jobs:
       - name: Verify generated Worker binding declarations
         run: pnpm wrangler:types:check
       - run: pnpm test
+      - name: Smoke-test the packaged CLI binary
+        run: pnpm test:cli-smoke
       - name: Verify Cloudflare runtime boundaries
         run: |
           pnpm exec tsc --noEmit -p tests/cloudflare/tsconfig.json --pretty false

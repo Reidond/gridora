@@ -48,6 +48,7 @@ pnpm wrangler:types              # regenerate Worker binding declarations
 pnpm wrangler:types:check        # verify committed Worker bindings (run after pnpm build)
 pnpm test:cloudflare             # Cloudflare runtime-boundary tests
 pnpm test:arma-sim               # Arma Reforger lifecycle on a simulated VPS
+pnpm test:cli-smoke              # build the packaged CLI and run --version/--help
 pnpm exec vitest run tests/architecture/documentation-record.test.ts   # ADR/STE record integrity
 ```
 

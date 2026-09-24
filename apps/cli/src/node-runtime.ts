@@ -20,6 +20,7 @@ import { CliError, errorEnvelope, ExitCode } from './errors.js'
 import { renderOutput } from './output.js'
 import { type CliProfile, ProfileStore, validateProfile } from './profile.js'
 import { CliFiles, executeRemoteCommand } from './runner.js'
+import cliPackage from '../package.json' with { type: 'json' }
 
 interface Tokens {
   readonly accessToken: string
@@ -67,6 +68,54 @@ const isMissingKeychainItem = (cause: unknown): boolean =>
   typeof cause === 'object' && cause !== null && 'code' in cause && cause.code === 44
 const isMissingSecretServiceItem = (cause: unknown): boolean =>
   typeof cause === 'object' && cause !== null && 'code' in cause && cause.code === 1
+const windowsVaultMissingExitCode = 44
+const isMissingWindowsVaultItem = (cause: unknown): boolean =>
+  typeof cause === 'object' &&
+  cause !== null &&
+  'code' in cause &&
+  cause.code === windowsVaultMissingExitCode
+const isMissingExecutable = (cause: unknown): boolean =>
+  typeof cause === 'object' && cause !== null && 'code' in cause && cause.code === 'ENOENT'
+// PowerShell treats the ASCII apostrophe and the typographic single quotes as
+// single-quote delimiters. Double every one so a value cannot end the literal.
+export const powerShellLiteral = (value: string): string =>
+  `'${value.replace(/['‘’‚‛]/g, (quote) => `${quote}${quote}`)}'`
+export type WindowsVaultAction = 'get' | 'set' | 'remove'
+// Windows PowerShell 5.1 loads the WinRT PasswordVault projection. The secret
+// never appears in the script: `set` reads base64 UTF-8 from standard input and
+// `get` writes base64 UTF-8 so console code pages cannot alter the token.
+// Exit 44 means "Element not found" (HRESULT 0x80070490) and nothing else.
+export const windowsVaultScript = (action: WindowsVaultAction, profile: string): string => {
+  const retrieve =
+    'try { $credential = $vault.Retrieve($resource, $account) } catch { $missing = -2147023728; if ($_.Exception.HResult -eq $missing -or $_.Exception.InnerException.HResult -eq $missing) { exit 44 }; exit 1 }'
+  const body = {
+    get: [
+      retrieve,
+      '$credential.RetrievePassword()',
+      '[Console]::Out.Write([Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($credential.Password)))',
+    ],
+    set: [
+      "$encoded = (@($input) -join '').Trim()",
+      '$password = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($encoded))',
+      '$vault.Add((New-Object Windows.Security.Credentials.PasswordCredential($resource, $account, $password)))',
+    ],
+    remove: [retrieve, '$vault.Remove($credential)'],
+  }[action]
+  return [
+    "$ErrorActionPreference = 'Stop'",
+    '[Windows.Security.Credentials.PasswordVault,Windows.Security.Credentials,ContentType=WindowsRuntime] | Out-Null',
+    '$vault = New-Object Windows.Security.Credentials.PasswordVault',
+    `$resource = ${powerShellLiteral('dev.gridora.cli')}`,
+    `$account = ${powerShellLiteral(profile)}`,
+    ...body,
+  ].join('; ')
+}
+const windowsPowerShellArgs = (action: WindowsVaultAction, profile: string) => [
+  '-NoProfile',
+  '-NonInteractive',
+  '-Command',
+  windowsVaultScript(action, profile),
+]
 const profileNamePattern = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/
 const pathFor = (name: string): string => {
   if (!profileNamePattern.test(name))
@@ -133,9 +182,33 @@ export const makeSystemCredentialStore = (
         : 'An operating-system credential store is required; plaintext fallback is forbidden',
       ExitCode.authentication,
     )
+  const windowsVaultFailure = (cause: unknown, code: string, message: string) =>
+    isMissingExecutable(cause)
+      ? failure(
+          'keychain_unavailable',
+          'Windows PowerShell is required for the Windows credential vault; plaintext fallback is forbidden',
+          ExitCode.authentication,
+        )
+      : failure(code, message, ExitCode.authentication)
   return {
     get: async (profile: string): Promise<string | undefined> => {
       requireSafeProfile(profile)
+      if (platform === 'win32') {
+        try {
+          const encoded = await credentialProcess.run(
+            'powershell.exe',
+            windowsPowerShellArgs('get', profile),
+          )
+          return Buffer.from(encoded, 'base64').toString('utf8')
+        } catch (cause) {
+          if (isMissingWindowsVaultItem(cause)) return undefined
+          throw windowsVaultFailure(
+            cause,
+            'keychain_read_failed',
+            'Windows credential vault could not read the Gridora credential',
+          )
+        }
+      }
       if (platform === 'darwin') {
         try {
           const encoded = await credentialProcess.run('/usr/bin/security', [
@@ -178,6 +251,22 @@ export const makeSystemCredentialStore = (
     },
     set: async (profile: string, token: string): Promise<void> => {
       requireSafeProfile(profile)
+      if (platform === 'win32') {
+        try {
+          await credentialProcess.runWithInput(
+            'powershell.exe',
+            windowsPowerShellArgs('set', profile),
+            `${Buffer.from(token, 'utf8').toString('base64')}\n`,
+          )
+          return
+        } catch (cause) {
+          throw windowsVaultFailure(
+            cause,
+            'keychain_write_failed',
+            'Windows credential vault could not store the Gridora credential',
+          )
+        }
+      }
       if (platform === 'darwin') {
         const encoded = Buffer.from(token, 'utf8').toString('base64')
         try {
@@ -215,6 +304,19 @@ export const makeSystemCredentialStore = (
     },
     remove: async (profile: string): Promise<void> => {
       requireSafeProfile(profile)
+      if (platform === 'win32') {
+        try {
+          await credentialProcess.run('powershell.exe', windowsPowerShellArgs('remove', profile))
+          return
+        } catch (cause) {
+          if (isMissingWindowsVaultItem(cause)) return
+          throw windowsVaultFailure(
+            cause,
+            'keychain_delete_failed',
+            'Windows credential vault could not delete the Gridora credential',
+          )
+        }
+      }
       if (platform === 'darwin') {
         try {
           await credentialProcess.run('/usr/bin/security', [
@@ -979,9 +1081,13 @@ export const parseGlobals = (argv: ReadonlyArray<string>) => {
 export const runNodeCli = async (argv: ReadonlyArray<string>): Promise<number> => {
   try {
     const global = parseGlobals(argv)
+    if (global.command.length === 1 && global.command[0] === '--version') {
+      process.stdout.write(`${cliPackage.version}\n`)
+      return 0
+    }
     if (global.command.includes('--help') || global.command.length === 0) {
       process.stdout.write(
-        'gridora <auth|organizations|plugins|providers|nodes|servers|mods|backups|operations|logs> [command]\n',
+        'gridora <auth|organizations|plugins|providers|nodes|servers|mods|backups|operations|logs> [command]\ngridora --version\n',
       )
       return 0
     }

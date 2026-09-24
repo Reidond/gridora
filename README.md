@@ -29,12 +29,16 @@ The repository includes:
 - Node.js 24 or later
 - pnpm 11.21.0
 - Docker for the live container-boundary test
-- macOS Keychain, or Linux Secret Service with `secret-tool`, for CLI login
+- macOS Keychain, Linux Secret Service with `secret-tool`, or the Windows
+  Credential Locker (`PasswordVault`) through Windows PowerShell 5.1
+  (`powershell.exe`), for CLI login
 - Wrangler authentication only for Cloudflare validation or deployment work
 
 The CLI does not store refresh tokens in plaintext. It fails closed when the
-operating-system credential store is unavailable. Windows packaging and its
-credential-store adapter are not part of this pre-alpha build.
+operating-system credential store is unavailable. The Windows adapter is
+verified with an injected process fake; no real Windows host has run it yet.
+`pnpm test:cli-smoke` builds the packaged CLI and runs its `--version` and
+`--help` flags on the current platform.
 
 ## Local verification
 
@@ -43,6 +47,7 @@ pnpm install --frozen-lockfile
 pnpm check
 pnpm test
 pnpm build
+pnpm test:cli-smoke
 GRIDORA_LIVE_DOCKER_SECURITY=1 pnpm exec vitest run tests/security/docker-boundaries.live.test.ts
 pnpm audit --audit-level high
 ```
