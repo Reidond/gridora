@@ -6,6 +6,8 @@ does not mean that a live service used the code. The status `template` means tha
 reviewable deployment or image template exists. The status `live-blocked` means
 that a required live dependency, approval, or production adapter does not exist.
 The status `pending` means that the final repository-wide check is not recorded.
+A later step can close a pending step. That step records the repository-wide
+check, and the pending step then changes to `local`.
 
 This record describes a public pre-alpha implementation and a live production
 Cloudflare control plane. This record does not claim a promoted provider image,
@@ -3304,7 +3306,7 @@ COMMERCIAL_REVIEW_REQUIRED` public envelope. Workflow check and 29 tests,
 
 ## Step 109: Simulate one Arma node and deploy the protected production control plane
 
-- Status: pending
+- Status: local
 - Situation: Local fakes did not exercise the Docker Engine API, UDP health,
   configuration rollback, or Docker log framing. No live Cloudflare environment
   served the selected `gridora.coasts.red` product namespace.
@@ -3368,6 +3370,8 @@ COMMERCIAL_REVIEW_REQUIRED` public envelope. Workflow check and 29 tests,
   400 response and allows only `https://gridora.coasts.red`. The unauthenticated
   agent and internal requests reach Gridora and fail closed. A clean browser
   reaches the Cloudflare Access sign-in page for the production console.
+- Verification: Step 131 records the repository-wide gate on commit
+  `a78364a02da26227e0b1bb0398f660cb466d664c`. That gate closes this step.
 - Constraint: The simulation does not install SteamCMD or Arma Reforger. It does
   not boot a signed provider image or create a paid VPS. The protected image
   workflow and simulated provider smoke remain separate release evidence.
@@ -3406,7 +3410,7 @@ COMMERCIAL_REVIEW_REQUIRED` public envelope. Workflow check and 29 tests,
 
 ## Step 111: Adopt truthful single-owner approval and ephemeral release evidence
 
-- Status: pending
+- Status: local
 - Situation: Gridora has one repository owner and no independent collaborator.
   GitHub cannot count the author as the approving reviewer of their own pull
   request, but it can require an explicit deployment approval from that owner
@@ -3442,10 +3446,13 @@ COMMERCIAL_REVIEW_REQUIRED` public envelope. Workflow check and 29 tests,
   bypass. Tag ruleset 21286351 is active for `refs/tags/v*`, prohibits updates
   and deletions, has no exclusions or bypass actors, and reports that the
   current user can never bypass it.
+- Verification: Step 131 records the repository-wide gate on commit
+  `a78364a02da26227e0b1bb0398f660cb466d664c`. That gate closes this step.
 - Blocker: Pull request 7 merged as `6c8af4f`. Protected image run 32740307775
   stopped before image construction because the Linux KVM firewall probe used
   same-bridge layer-2 traffic. Step 112 corrects that test boundary. The signed
-  image, simulated-provider smoke, semantic tag, and release remain.
+  image, simulated-provider smoke, semantic tag, and release remain. Steps 112
+  through 128 record the later repairs.
 - Decision: ADR 0086.
 
 ## Step 112: Prove leased ingress through Docker DNAT on Linux KVM
@@ -4303,3 +4310,42 @@ token '<'` because the deployed Nuxt runtime had an empty API base.
   proven only against the injected process fake. CI runs the binary smoke on
   Ubuntu only.
 - Decision: ADR 0108.
+||||||| parent of f6bbbf7 (docs(record): close pending steps 109 and 111 with the recorded gate)
+
+## Step 135: Close the pending steps 109 and 111
+
+- Status: local
+- Situation: Steps 109 and 111 kept the status `pending`. Steps 128 through 130
+  record complete gates on the same code, and Step 110 already has the status
+  `local`. A release step must not cite a record that is not truthful.
+- Task: Record one repository-wide gate. Close Steps 109 and 111 with that
+  gate. Do not rewrite their Action, Result, Evidence, or Blocker lines.
+- Action: Run `pnpm check`, `pnpm test`, `pnpm build`,
+  `pnpm wrangler:types:check`, `pnpm test:cloudflare`, and the documentation
+  record test on commit `a78364a02da26227e0b1bb0398f660cb466d664c`.
+- Action: Change Steps 109 and 111 from `pending` to `local`. Add one
+  Verification line to each step that points to this gate.
+- Action: Add one sentence to the Step 111 Blocker line. The sentence states
+  that Steps 112 through 128 record the later repairs.
+- Action: Add one header sentence that tells how a later step closes a pending
+  step.
+- Result: No step in the record has the status `pending`. The Step 111 Blocker
+  line no longer shows the firewall repair as future work only.
+- Evidence: `docs/implementation/step-by-step.md`,
+  `.specs/record-pending-step-reconciliation/spec.md`, ADR 0084, ADR 0085, and
+  ADR 0086.
+- Verification: `pnpm check` reports 920 formatted files and zero lint or type
+  errors across 522 files. `pnpm build` completes 112 builds.
+  `pnpm wrangler:types:check` reports 7 up-to-date binding declarations.
+  `pnpm test:cloudflare` passes 6 test files with 11 tests. The documentation
+  record test passes 4 tests.
+- Verification: `pnpm test` reports 225 passing and 2 skipped test files of
+  228, and 1,503 passing and 3 skipped tests of 1,511. Five tests in
+  `tests/infrastructure/node-bootstrap.test.ts` exceed the 5-second default
+  timeout. Concurrent sessions held the 12-core host at a load average between
+  14 and 336. The same file passes all 7 tests with a 120-second timeout; its
+  slowest test takes 11.4 seconds. Step 130 records 1,508 passing tests on the
+  same code.
+- Blocker: The five node-bootstrap tests need a pass at the default timeout on
+  an idle host or in CI before a release step cites this gate.
+- Decision: ADR 0086.
