@@ -151,3 +151,6 @@ Rejected.
   keeps authenticated console routes on the Access-protected console hostname.
 - ADR 0105 reduces GitHub automation to one routine CI signal plus manual image
   and tag-triggered release workflows, with no self-review gates.
+- ADR 0108 stores the Windows CLI refresh token in the WinRT PasswordVault
+  through Windows PowerShell with the secret on standard input, and smoke-tests
+  the packaged CLI binary in CI.

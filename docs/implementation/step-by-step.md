@@ -4254,3 +4254,52 @@ token '<'` because the deployed Nuxt runtime had an empty API base.
   default-timeout failures that moved between runs.
 - Blocker: None.
 - Decision: ADR 0065.
+||||||| parent of fb7f124 (feat(cli): store credentials in the Windows vault and smoke-test the packaged binary)
+
+## Step 134: Store Windows CLI credentials in the platform vault
+
+- Status: local
+- Situation: The CLI failed closed on Windows, so a Windows user could not keep
+  a login. Step 95 recorded that the Windows credential adapter and the
+  packaged-binary smoke test were not complete.
+- Task: Store the Windows refresh token in the platform vault without a
+  plaintext fallback. Prove that the packaged CLI binary starts.
+- Action: Run `powershell.exe -NoProfile -NonInteractive -Command` with a fixed
+  script that loads the WinRT `PasswordVault`. Use the resource
+  `dev.gridora.cli` and the profile as the user name.
+- Action: Send the token as base64 UTF-8 text through standard input. Return
+  the stored token as base64 UTF-8 text. Keep the token and its encoding out of
+  the process arguments.
+- Action: Validate the profile before a process starts. Embed the profile only
+  as a single-quoted literal. Double every single-quote form that PowerShell
+  accepts.
+- Action: Map exit 44, "Element not found", to a missing item. Map every other
+  vault failure to `keychain_read_failed`, `keychain_write_failed`, or
+  `keychain_delete_failed`. Map a missing `powershell.exe` to
+  `keychain_unavailable`.
+- Action: Bundle the `@gridora/*` workspace packages into the CLI build. Add
+  `--version`. Add `pnpm test:cli-smoke` and run it in the CI `verify` job on
+  the existing Ubuntu runner.
+- Result: The CLI can store, read, and delete a Windows login in the platform
+  vault. The packaged `dist/main.mjs` now starts. Before this step it failed
+  with `ERR_MODULE_NOT_FOUND` because it imported workspace TypeScript source.
+- Evidence: `apps/cli/src/node-runtime.ts`, `apps/cli/tsdown.config.ts`,
+  `apps/cli/test/system-credential-store.test.ts`,
+  `apps/cli/test/version.test.ts`, `infra/scripts/smoke-cli-binary.mjs`,
+  `.github/workflows/ci.yml`, `tests/architecture/release-workflow.test.ts`,
+  `README.md`, and ADR 0108.
+- Test: The injected process-adapter test asserts the exact PowerShell argv and
+  standard input. It covers Windows set, get, missing get, delete, missing
+  delete, vault errors, absent PowerShell, hostile profile names, and literal
+  escaping. The unsupported-platform test now uses `freebsd`.
+- Verification: The focused CLI, workflow, and documentation tests pass 50
+  assertions. `pnpm check` reports 924 formatted files and zero lint or type
+  errors across 525 files. `pnpm test` passes 227 test files with 1,519 tests
+  and 3 skipped. The default 5-second timeout failed unrelated API and bootstrap
+  tests while the host load average was above 200; those files pass alone with
+  a 60-second timeout. `pnpm build` completes 112 tasks. `pnpm test:cli-smoke`
+  passes on macOS.
+- Blocker: No real Windows host executed the vault script. The adapter is
+  proven only against the injected process fake. CI runs the binary smoke on
+  Ubuntu only.
+- Decision: ADR 0108.

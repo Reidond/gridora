@@ -17,6 +17,15 @@ describe('release workflow evidence', () => {
     const ci = parse(read('.github/workflows/ci.yml'))
     expect(Object.keys(ci.on).sort()).toEqual(['pull_request', 'push'])
     expect(Object.keys(ci.jobs)).toEqual(['verify'])
+    expect(ci.jobs.verify['runs-on']).toBe('ubuntu-24.04')
+    expect(ci.jobs.verify.strategy).toBeUndefined()
+    expect(ci.jobs.verify.steps).toContainEqual({
+      name: 'Smoke-test the packaged CLI binary',
+      run: 'pnpm test:cli-smoke',
+    })
+    expect(JSON.parse(read('package.json')).scripts['test:cli-smoke']).toBe(
+      'node infra/scripts/smoke-cli-binary.mjs',
+    )
 
     const workflow = parse(read('.github/workflows/image.yml'))
     const triggers = workflow.on
