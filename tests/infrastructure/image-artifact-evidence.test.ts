@@ -83,6 +83,8 @@ const packagePolicy = {
   ],
 }
 
+const phasedUpdatesPolicy = 'APT::Get::Always-Include-Phased-Updates "true";\n'
+
 const makeRoot = async () => {
   const root = await mkdtemp(join(tmpdir(), 'gridora-image-evidence-'))
   roots.push(root)
@@ -96,7 +98,10 @@ const makeExecutable = async (root: string, name: string, contents: string) => {
   return path
 }
 
-const rootfsArchive = async (root: string) => {
+const rootfsArchive = async (
+  root: string,
+  { phasedUpdates = phasedUpdatesPolicy }: { phasedUpdates?: string | null } = {},
+) => {
   const rootfs = join(root, 'rootfs')
   const status = join(rootfs, 'var', 'lib', 'dpkg', 'status')
   const info = join(rootfs, 'var', 'lib', 'dpkg', 'info')
@@ -116,6 +121,7 @@ const rootfsArchive = async (root: string) => {
   await mkdir(info, { recursive: true })
   await mkdir(join(rootfs, 'etc', 'apt', 'keyrings'), { recursive: true })
   await mkdir(join(rootfs, 'etc', 'apt', 'sources.list.d'), { recursive: true })
+  await mkdir(join(rootfs, 'etc', 'apt', 'apt.conf.d'), { recursive: true })
   await mkdir(join(nestedContainerStatus, '..'), { recursive: true })
   await writeFile(
     status,
@@ -142,6 +148,12 @@ const rootfsArchive = async (root: string) => {
       '',
     ].join('\n'),
   )
+  if (phasedUpdates !== null) {
+    await writeFile(
+      join(rootfs, 'etc', 'apt', 'apt.conf.d', '90gridora-phased-updates'),
+      phasedUpdates,
+    )
+  }
   await writeFile(nestedContainerStatus, 'Package: nested-container-only\nVersion: 1.0.0\n')
   const archive = join(root, 'rootfs-source.tar')
   // A real Linux rootfs includes device nodes. The evidence extractor must not
@@ -298,6 +310,59 @@ printf 'fpr:::::::::${dockerFingerprint}:\n'
       packages: { SPDXID: string }[]
     }
     expect(generated.packages.map(({ SPDXID }) => SPDXID)).not.toContain('SPDXRef-managed-stdlib')
+  })
+
+  it('requires the exact APT phased-updates policy in the extracted rootfs', async () => {
+    const root = await makeRoot()
+    const gpg = await makeExecutable(
+      root,
+      'gpg',
+      `#!/usr/bin/env bash
+set -euo pipefail
+printf 'fpr:::::::::${dockerFingerprint}:\n'
+`,
+    )
+    const validate = async (phasedUpdates: string | null) => {
+      const caseRoot = await mkdtemp(join(root, 'case-'))
+      const archive = await rootfsArchive(caseRoot, { phasedUpdates })
+      const evidence = join(caseRoot, 'node.qcow2.rootfs-evidence.json')
+      await writeFile(
+        evidence,
+        JSON.stringify({
+          schemaVersion: 1,
+          rootfsArchive: {
+            sha256: digest(await readFile(archive)),
+            inventory: { format: 'dpkg-status', packageCount: 7 },
+          },
+        }),
+      )
+      await execute(validatePackagePolicy, [archive, evidence], {
+        env: { ...process.env, GRIDORA_GPG_COMMAND: gpg },
+      })
+      return JSON.parse(await readFile(evidence, 'utf8')) as { packagePolicy: unknown }
+    }
+
+    expect((await validate(phasedUpdatesPolicy)).packagePolicy).toEqual(packagePolicy)
+
+    await expect(validate(null)).rejects.toMatchObject({
+      stderr: expect.stringContaining(
+        'rootfs archive must contain exactly one APT phased-updates policy; found 0',
+      ),
+    })
+    for (const tampered of [
+      '',
+      'APT::Get::Always-Include-Phased-Updates "false";\n',
+      'APT::Get::Never-Include-Phased-Updates "true";\n',
+      'APT::Get::Always-Include-Phased-Updates "true";',
+      `${phasedUpdatesPolicy}APT::Machine-ID "00000000000000000000000000000001";\n`,
+    ]) {
+      await expect(validate(tampered), JSON.stringify(tampered)).rejects.toMatchObject({
+        code: expect.any(Number),
+        stderr: expect.stringMatching(
+          /APT phased-updates policy (is empty|does not match the required content)/,
+        ),
+      })
+    }
   })
 
   it('rejects a tampered rootfs and invokes Cosign verification for the protected workflow identity', async () => {

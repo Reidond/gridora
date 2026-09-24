@@ -124,6 +124,12 @@ override, cloudflared source commit, or Go version fails before signing. The
 package policy is included in rootfs evidence and therefore in promotion
 evidence.
 
+Amendment (2026-09-24, STE Step 131): the image keeps
+`/etc/apt/apt.conf.d/90gridora-phased-updates` with
+`APT::Get::Always-Include-Phased-Updates "true";`, so image provisioning, the
+pending-upgrade gate, and the node's later unattended upgrades install every
+published Ubuntu update instead of a machine-id-selected phased subset.
+
 ## Verification
 
 Require Bash parsing, ShellCheck, workflow parsing, focused rootfs policy,

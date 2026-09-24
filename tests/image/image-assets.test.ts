@@ -233,6 +233,26 @@ describe('node image assets', () => {
     expect(policy).toContain('/usr/libexec/docker/cli-plugins/docker-compose')
   })
 
+  it('includes Ubuntu phased updates before any apt call and reports pending upgrades', () => {
+    const provision = asset('infra/packer/scripts/provision.sh')
+    const dropIn = '/etc/apt/apt.conf.d/90gridora-phased-updates'
+    expect(provision).toContain(
+      `printf '%s\\n' 'APT::Get::Always-Include-Phased-Updates "true";' |\n  sudo tee ${dropIn} >/dev/null`,
+    )
+    expect(provision).toContain(`sudo chmod 0644 ${dropIn}`)
+    expect(provision.indexOf(dropIn)).toBeGreaterThan(-1)
+    expect(provision.indexOf(dropIn)).toBeLessThan(provision.indexOf('sudo apt-get'))
+    expect(provision).not.toContain('Never-Include-Phased-Updates')
+    expect(provision).not.toContain('APT::Machine-ID')
+    expect(provision).not.toMatch(new RegExp(`rm [^\\n]*${dropIn}`))
+    expect(provision).toContain(
+      "pending_upgrades=$(sudo apt-get --simulate dist-upgrade | awk '/^Inst / { print }')",
+    )
+    expect(provision).toContain(
+      "echo 'image provisioning left pending package upgrades' >&2\n  printf '%s\\n' \"${pending_upgrades}\" >&2\n  exit 1",
+    )
+  })
+
   it('creates the journald drop-in directory before installing its policy', () => {
     const provision = asset('infra/packer/scripts/provision.sh')
     const directory = '/etc/systemd/journald.conf.d /opt/gridora'
