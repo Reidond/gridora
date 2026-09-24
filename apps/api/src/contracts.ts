@@ -1695,12 +1695,7 @@ export const openApiDocument = {
             }),
         responses: {
           [route.successStatus]: {
-            description:
-              route.successStatus === 501
-                ? 'Not implemented'
-                : route.websocket === true
-                  ? 'Switching Protocols'
-                  : 'Success',
+            description: route.websocket === true ? 'Switching Protocols' : 'Success',
             ...(route.websocket === true
               ? {}
               : { content: { 'application/json': { schema: jsonSchema(route.response) } } }),

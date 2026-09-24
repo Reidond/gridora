@@ -4217,3 +4217,40 @@ token '<'` because the deployed Nuxt runtime had an empty API base.
   v6.1.0 and `anchore/sbom-action` v0.24.2 exist. This change keeps the
   releases that the Dependabot pull requests proposed.
 - Decision: ADR 0105.
+||||||| parent of ed47115 (refactor(api): remove the game-server action 501 catch-all)
+
+## Step 133: Remove the game-server action 501 catch-all
+
+- Status: local
+- Situation: The API registered a tenant catch-all for
+  `/v1/organizations/:organization/game-servers/:id/actions/*`. It authorized
+  an operator and then answered 501 for every unknown action. This was the last
+  public 501 route. ADR 0065 removes old public 501 routes instead of
+  advertising them.
+- Task: Remove the catch-all. Keep registered game-server actions. Remove the
+  dead 501 branches in the OpenAPI generator and the mutation audit inventory.
+- Action: Delete the `tenantNotImplemented` helper and its single
+  registration. Keep `notImplemented` only for the internal Workflow-step and
+  Queue-event guards. Remove the `Not implemented` response description from
+  the OpenAPI generator and the 501 filter from the audit inventory check.
+  Keep the 501 compatibility handling in the web client.
+- Result: An unknown game-server action falls through to the standard 404
+  `NOT_FOUND` problem document. An unauthenticated caller still receives 401
+  from Access verification before routing. Tenant authorization does not run
+  for an unmatched route, so an authenticated caller receives the same 404 for
+  its own and for a foreign organization. This 404 does not disclose
+  membership. The registered `actions/clone` route still authorizes the tenant
+  and rejects a foreign organization with 403.
+- Evidence: `apps/api/src/index.ts`, `apps/api/src/contracts.ts`,
+  `apps/api/src/mutation-audit-inventory.ts`,
+  `apps/api/test/composed-boundaries.test.ts`,
+  `apps/api/test/observation-realtime-contracts.test.ts`,
+  `.specs/remove-game-server-action-catch-all/spec.md`, and ADR 0065.
+- Verification: The focused API suite passes 7 composed-boundary tests
+  and 9 contract and audit-inventory tests. The complete local gate reports
+  920 formatted files, zero lint or type errors across 522 files, 226 passing
+  test files with 1,510 passing tests, and 112 successful builds. The complete
+  test run used raised per-test timeouts because host load caused unrelated
+  default-timeout failures that moved between runs.
+- Blocker: None.
+- Decision: ADR 0065.

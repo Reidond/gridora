@@ -1966,6 +1966,8 @@ const completeAuthentication = (context: HonoContext<AppEnv>) =>
 app.post('/v1/auth/complete', apiEffectHandler(completeAuthentication))
 app.post('/v1/auth/sign-up/complete', apiEffectHandler(completeAuthentication))
 
+// Internal Workflow-step and Queue-event guards only. Public routes that are not
+// implemented are removed (ADR 0065) and fall through to the standard 404.
 const notImplemented = (context: HonoContext<AppEnv>, capability: string): Response =>
   new Response(
     JSON.stringify({
@@ -5370,33 +5372,6 @@ app.post(
   ),
 )
 
-const tenantNotImplemented = (
-  path: string,
-  capability: string,
-  minimumRole: 'viewer' | 'operator' | 'administrator' | 'owner' = 'viewer',
-): void => {
-  app.all(
-    path,
-    apiEffectHandler((context) =>
-      Effect.gen(function* () {
-        const identity = yield* accessIdentity(context.get('accessClaims'))
-        yield* authorizeOrganization(
-          identity,
-          routeParam(context, 'organization'),
-          yield* correlationId(context),
-          minimumRole,
-        )
-        return notImplemented(context, capability)
-      }),
-    ),
-  )
-}
-
-tenantNotImplemented(
-  '/v1/organizations/:organization/game-servers/:id/actions/*',
-  'Game server action',
-  'operator',
-)
 app.notFound((context) =>
   context.json(
     {

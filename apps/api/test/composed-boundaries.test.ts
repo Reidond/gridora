@@ -202,6 +202,53 @@ describe('centrally composed API boundaries', () => {
     expect(foreign.status).toBe(403)
   })
 
+  it('answers an unknown game-server action with the uniform 404 and keeps registered actions', async () => {
+    const unknownActionPath =
+      '/v1/organizations/organization-a/game-servers/server-a/actions/teleport'
+    const unknown = await access(unknownActionPath, { method: 'POST' })
+    expect(unknown.status).toBe(404)
+    expect(unknown.headers.get('content-type')).toBe('application/problem+json')
+    await expect(unknown.json()).resolves.toMatchObject({
+      status: 404,
+      code: 'NOT_FOUND',
+      title: 'Route not found',
+    })
+
+    const nested = await access(
+      '/v1/organizations/organization-a/game-servers/server-a/actions/teleport/now',
+      { method: 'GET' },
+    )
+    expect(nested.status).toBe(404)
+    await expect(nested.json()).resolves.toMatchObject({ code: 'NOT_FOUND' })
+
+    // No tenant route matches, so the 404 is uniform and does not disclose
+    // whether the caller belongs to the organization.
+    const foreign = await access(
+      '/v1/organizations/organization-b/game-servers/server-b/actions/teleport',
+      { method: 'POST' },
+    )
+    expect(foreign.status).toBe(404)
+    await expect(foreign.json()).resolves.toMatchObject({ code: 'NOT_FOUND' })
+
+    const unauthenticated = await app.request(
+      `https://api.gridora.test${unknownActionPath}`,
+      { method: 'POST' },
+      env,
+    )
+    expect(unauthenticated.status).toBe(401)
+
+    const registered = await access(
+      '/v1/organizations/organization-a/game-servers/server-a/actions/clone',
+      { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' },
+    )
+    expect(registered.status).toBe(400)
+    const foreignRegistered = await access(
+      '/v1/organizations/organization-b/game-servers/server-b/actions/clone',
+      { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' },
+    )
+    expect(foreignRegistered.status).toBe(403)
+  })
+
   it('accepts an invitation for the Access-authenticated existing identity exactly once', async () => {
     const invitationToken = 'a'.repeat(64)
     const first = await access(`/v1/invitations/${invitationToken}/actions/accept`, {
