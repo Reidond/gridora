@@ -28,6 +28,13 @@ readonly containerd_io_version='2.3.3-1~ubuntu.24.04~noble'
 readonly docker_buildx_version='0.36.1-1~ubuntu.24.04~noble'
 readonly docker_compose_version='5.5.0-1~ubuntu.24.04~noble'
 
+# Ubuntu phases some stable updates by machine-id hash. A promoted image must
+# carry every published fix, and every apt-get call below, including the
+# pending-upgrade gate, must see the same policy. The drop-in stays in the
+# image so later unattended upgrades on the node are not phased either.
+printf '%s\n' 'APT::Get::Always-Include-Phased-Updates "true";' |
+  sudo tee /etc/apt/apt.conf.d/90gridora-phased-updates >/dev/null
+sudo chmod 0644 /etc/apt/apt.conf.d/90gridora-phased-updates
 sudo apt-get update
 sudo DEBIAN_FRONTEND=noninteractive apt-get dist-upgrade -y --no-install-recommends
 sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
@@ -72,8 +79,10 @@ test "$(dpkg-query -W -f='${Version}' docker-ce-cli)" = "${docker_ce_cli_version
 test "$(dpkg-query -W -f='${Version}' containerd.io)" = "${containerd_io_version}"
 test "$(dpkg-query -W -f='${Version}' docker-buildx-plugin)" = "${docker_buildx_version}"
 test "$(dpkg-query -W -f='${Version}' docker-compose-plugin)" = "${docker_compose_version}"
-if sudo apt-get --simulate dist-upgrade | awk '/^Inst / { pending = 1 } END { exit !pending }'; then
+pending_upgrades=$(sudo apt-get --simulate dist-upgrade | awk '/^Inst / { print }')
+if [[ -n "${pending_upgrades}" ]]; then
   echo 'image provisioning left pending package upgrades' >&2
+  printf '%s\n' "${pending_upgrades}" >&2
   exit 1
 fi
 sudo systemctl start docker

@@ -4113,3 +4113,58 @@ token '<'` because the deployed Nuxt runtime had an empty API base.
   active immutable `v*` tag ruleset.
 - Blocker: None for the GitHub process simplification.
 - Decision: ADR 0105.
+
+## Step 131: Include Ubuntu phased updates in the node image
+
+- Status: local
+- Situation: Protected exact-main image run 36030351131 failed `build-local`
+  after 22 minutes. `apt-get dist-upgrade` deferred `apparmor`, `dmidecode`,
+  `libapparmor1`, `libaudit-common`, and `libaudit1` because Ubuntu phases
+  these updates by machine-id hash. The Step 128 pending-upgrade gate then
+  found the same packages and stopped the build. The run produced no artifact,
+  and provider smoke did not run.
+- Task: Make the image install every published Ubuntu update. Keep the
+  pending-upgrade gate unchanged in meaning.
+- Action: Write `/etc/apt/apt.conf.d/90gridora-phased-updates` with
+  `APT::Get::Always-Include-Phased-Updates "true";` before the first
+  `apt-get update`. The upgrade, install, purge, and simulated upgrade calls
+  all use this policy.
+- Action: Keep the drop-in in the image. The node's later unattended upgrades
+  then install phased updates too.
+- Action: Print each pending `Inst` line to standard error before the gate
+  exits with status 1.
+- Action: Require the drop-in with its exact content in the extracted rootfs
+  before the package policy enters rootfs evidence.
+- Result: A promoted image carries every published Ubuntu fix, not a subset
+  that the build machine-id selects. A future pending-upgrade failure names
+  its packages in the build log.
+- Evidence: `infra/packer/scripts/provision.sh`,
+  `infra/scripts/validate-rootfs-package-policy.sh`,
+  `tests/image/image-assets.test.ts`,
+  `tests/infrastructure/image-artifact-evidence.test.ts`, the failed protected
+  run 36030351131, and the ADR 0103 amendment note.
+- Evidence: The `apt_preferences(5)` page in the Ubuntu 24.04 `apt` 2.8.3
+  package documents `APT::Get::Always-Include-Phased-Updates`. The
+  `apt.conf(5)` page does not list it.
+- Evidence: A clean `ubuntu:24.04` container ran `apt-get update`, set
+  `/etc/machine-id` to `00000000000000000000000000000001`, and ran
+  `apt-get --simulate dist-upgrade`. APT reported that it deferred
+  `libaudit-common` and `libaudit1` due to phasing: 30 upgraded and 2 not
+  upgraded. With the drop-in, APT reported no deferral: 32 upgraded and 0 not
+  upgraded, with `Inst` lines for both packages. After a real
+  `apt-get dist-upgrade` with the drop-in, the simulated upgrade printed 0
+  `Inst` lines.
+- Verification: Bash parsing passes for both changed scripts. ShellCheck 0.9.0
+  from the pinned `infra/images/Dockerfile.validation` image passes for the
+  same 16 scripts that the image workflow checks. The focused image-asset and
+  rootfs-evidence tests pass 30 tests, and the new rootfs policy test rejects
+  a missing, empty, disabled, reversed, unterminated, or extended drop-in.
+  The complete local gate reports 921 formatted files, zero lint or type
+  errors across 522 files, 226 passing test files with 1,510 passing tests,
+  and 112 successful builds. Under a host load average near 180, five
+  unrelated `tests/infrastructure/node-bootstrap.test.ts` tests exceeded the
+  default 5-second timeout. The complete suite passes with a 60-second test
+  timeout.
+- Blocker: Do not tag or release until an exact-main replacement run produces
+  the signed artifact and provider smoke succeeds.
+- Decision: ADR 0103.

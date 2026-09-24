@@ -10,6 +10,7 @@ command -v "${tar_command}" >/dev/null || { echo 'tar is required' >&2; exit 2; 
 command -v "${gpg_command}" >/dev/null || { echo 'gpg is required' >&2; exit 2; }
 command -v jq >/dev/null || { echo 'jq is required' >&2; exit 2; }
 command -v sha256sum >/dev/null || { echo 'sha256sum is required' >&2; exit 2; }
+command -v cmp >/dev/null || { echo 'cmp is required' >&2; exit 2; }
 [[ -s "${rootfs_archive}" ]]
 [[ -s "${rootfs_evidence}" ]]
 
@@ -27,6 +28,8 @@ archive_listing="${work}/rootfs.list"
 status_file="${work}/dpkg-status"
 key_file="${work}/docker.asc"
 source_file="${work}/docker.sources"
+phased_updates_file="${work}/90gridora-phased-updates"
+expected_phased_updates_file="${work}/90gridora-phased-updates.expected"
 "${tar_command}" -tf "${rootfs_archive}" >"${archive_listing}"
 
 archive_member() {
@@ -65,6 +68,15 @@ expected_source=$(printf '%s\n' \
   'Components: stable' \
   'Signed-By: /etc/apt/keyrings/docker.asc')
 test "$(sed -e 's/[[:space:]]*$//' "${source_file}")" = "${expected_source}"
+
+# The image must keep installing Ubuntu phased updates; see provision.sh.
+stream_member '^([.]/)?etc/apt/apt[.]conf[.]d/90gridora-phased-updates$' \
+  'APT phased-updates policy' "${phased_updates_file}"
+printf '%s\n' 'APT::Get::Always-Include-Phased-Updates "true";' >"${expected_phased_updates_file}"
+cmp -s -- "${expected_phased_updates_file}" "${phased_updates_file}" || {
+  echo 'APT phased-updates policy does not match the required content' >&2
+  exit 1
+}
 
 install -d -m 0700 "${work}/gnupg"
 docker_repository_fingerprint=$(GNUPGHOME="${work}/gnupg" "${gpg_command}" \
