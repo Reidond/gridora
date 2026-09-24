@@ -222,15 +222,54 @@ describe('node image assets', () => {
     expect(provision).toContain('install -d -m 0700 /tmp/gridora-docker-key-check')
     expect(provision).toContain('GNUPGHOME=/tmp/gridora-docker-key-check')
     expect(provision).toContain('find /tmp/gridora-docker-key-check -depth -delete')
-    expect(provision).toContain("docker_ce_version='5:29.7.2-1~ubuntu.24.04~noble'")
-    expect(provision).toContain("containerd_io_version='2.3.3-1~ubuntu.24.04~noble'")
-    expect(provision).toContain("docker_buildx_version='0.36.1-1~ubuntu.24.04~noble'")
-    expect(provision).toContain("docker_compose_version='5.5.0-1~ubuntu.24.04~noble'")
+    expect(provision).toContain("docker_ce_version='5:29.8.1-1~ubuntu.24.04~noble'")
+    expect(provision).toContain("docker_ce_cli_version='5:29.8.1-1~ubuntu.24.04~noble'")
+    expect(provision).toContain("containerd_io_version='2.3.5-1~ubuntu.24.04~noble'")
+    expect(provision).toContain("docker_buildx_version='0.37.1-1~ubuntu.24.04~noble'")
+    expect(provision).toContain("docker_compose_version='5.5.1-1~ubuntu.24.04~noble'")
     expect(provision).toContain('apt-get --simulate dist-upgrade')
     expect(provision).not.toMatch(/\bdocker\.io\b/)
     expect(provision).not.toContain('docker-compose-v2')
     expect(policy).toContain('replacementEvidence: "ubuntu-dpkg-package-inventory"')
     expect(policy).toContain('/usr/libexec/docker/cli-plugins/docker-compose')
+  })
+
+  it('keeps one Docker pin block in the image build and the rootfs package policy', () => {
+    const pinBlock = (source: string) =>
+      source
+        .split('\n')
+        .filter((line) =>
+          /^readonly (docker_repository_key_fingerprint|docker_ce_version|docker_ce_cli_version|containerd_io_version|docker_buildx_version|docker_compose_version)=/.test(
+            line,
+          ),
+        )
+    const provisionPins = pinBlock(asset('infra/packer/scripts/provision.sh'))
+    const policyPins = pinBlock(asset('infra/scripts/validate-rootfs-package-policy.sh'))
+    expect(provisionPins).toHaveLength(6)
+    expect(policyPins).toEqual(provisionPins)
+  })
+
+  it('checks Docker pin drift in the image validate job before any image build', () => {
+    const source = asset('.github/workflows/image.yml')
+    const workflow = parseDocument(source).toJS() as {
+      jobs: Record<string, { needs?: string; steps: { name?: string; run?: string }[] }>
+    }
+    const validate = workflow.jobs.validate!.steps
+    const checkIndex = validate.findIndex(
+      (step) => step.run === 'bash infra/scripts/check-docker-pins.sh',
+    )
+    expect(validate[checkIndex]?.name).toBe(
+      'Check Docker package pins against the Docker repository index',
+    )
+    // The check needs only the checkout, so it fails before tool setup.
+    expect(checkIndex).toBe(1)
+    expect(workflow.jobs['build-local']!.needs).toBe('validate')
+    expect(source.match(/infra\/scripts\/check-docker-pins\.sh/g)).toHaveLength(3)
+    const check = asset('infra/scripts/check-docker-pins.sh')
+    expect(check).toContain(
+      "readonly index_url='https://download.docker.com/linux/ubuntu/dists/noble/stable/binary-amd64/Packages'",
+    )
+    expect(check).toContain("--proto '=https' --tlsv1.2")
   })
 
   it('includes Ubuntu phased updates before any apt call and reports pending upgrades', () => {

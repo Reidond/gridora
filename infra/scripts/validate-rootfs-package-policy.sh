@@ -15,11 +15,11 @@ command -v cmp >/dev/null || { echo 'cmp is required' >&2; exit 2; }
 [[ -s "${rootfs_evidence}" ]]
 
 readonly docker_repository_key_fingerprint='9DC858229FC7DD38854AE2D88D81803C0EBFCD88'
-readonly docker_ce_version='5:29.7.2-1~ubuntu.24.04~noble'
-readonly docker_ce_cli_version='5:29.7.2-1~ubuntu.24.04~noble'
-readonly containerd_io_version='2.3.3-1~ubuntu.24.04~noble'
-readonly docker_buildx_version='0.36.1-1~ubuntu.24.04~noble'
-readonly docker_compose_version='5.5.0-1~ubuntu.24.04~noble'
+readonly docker_ce_version='5:29.8.1-1~ubuntu.24.04~noble'
+readonly docker_ce_cli_version='5:29.8.1-1~ubuntu.24.04~noble'
+readonly containerd_io_version='2.3.5-1~ubuntu.24.04~noble'
+readonly docker_buildx_version='0.37.1-1~ubuntu.24.04~noble'
+readonly docker_compose_version='5.5.1-1~ubuntu.24.04~noble'
 
 umask 077
 work=$(mktemp -d)
