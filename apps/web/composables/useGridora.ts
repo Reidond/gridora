@@ -290,6 +290,24 @@ export const useGridoraMutations = () => {
         return enqueue(operation)
       },
     }),
+    /** Rename is terminal and metadata-only; it refreshes inventory instead of opening an operation. */
+    renameServer: async (server: GameServer, name: string) => {
+      if (state.value.session.mode === 'api')
+        await refreshAfterRevisionConflict(() =>
+          api.renameGameServer(slug.value, server.id, {
+            name,
+            expectedRevision: server.revision ?? 1,
+          }),
+        )
+      else {
+        const current = state.value.servers[slug.value]?.find((item) => item.id === server.id)
+        if (current) {
+          current.name = name
+          current.revision = (current.revision ?? 1) + 1
+        }
+      }
+      await invalidate()
+    },
     restoreBackup: useMutation({
       mutationFn: async (input: BackupRestoreRequest) => {
         let operation = operationFor('Restore backup', input.backupId, 'backup')

@@ -317,6 +317,46 @@ const cloneServer = async () => {
     actionBusy.value = ''
   }
 }
+const canRename = computed(() => {
+  const role = data.organization.value?.role
+  return role !== undefined && canOperate(role)
+})
+const renaming = ref(false)
+const renameDraft = ref('')
+const renameError = ref('')
+/** Mirrors the create-time server name contract; the API remains authoritative. */
+const renameValidation = computed(() => {
+  const name = renameDraft.value
+  if (name.trim().length === 0) return 'Enter a server name.'
+  if (name !== name.trim()) return 'Remove leading or trailing spaces.'
+  if (name.length > 96) return 'Use 96 characters or fewer.'
+  if (/\p{Cc}/u.test(name)) return 'Remove control characters.'
+  return ''
+})
+const renameUnchanged = computed(() => renameDraft.value === server.value?.name)
+const startRename = () => {
+  renameDraft.value = server.value?.name ?? ''
+  renameError.value = ''
+  renaming.value = true
+}
+const cancelRename = () => {
+  renaming.value = false
+  renameError.value = ''
+}
+const renameServer = async () => {
+  const currentServer = server.value
+  if (!currentServer || renameValidation.value !== '' || renameUnchanged.value) return
+  actionBusy.value = 'rename'
+  renameError.value = ''
+  try {
+    await mutations.renameServer(currentServer, renameDraft.value)
+    renaming.value = false
+  } catch (cause) {
+    renameError.value = cause instanceof Error ? cause.message : 'The rename could not be saved.'
+  } finally {
+    actionBusy.value = ''
+  }
+}
 const forceCleanup = async () => {
   const currentServer = server.value
   if (!currentServer || forceCleanupConfirmation.value !== currentServer.name) return
@@ -575,8 +615,53 @@ const sendCommand = () => {
           class="mb-3 inline-flex items-center gap-1 text-xs text-[#7f9991] hover:text-white"
           ><UIcon name="i-lucide-arrow-left" /> Game servers</NuxtLink
         >
-        <div class="flex flex-wrap items-center gap-3">
+        <form
+          v-if="renaming"
+          class="flex flex-wrap items-center gap-2"
+          aria-label="Rename server"
+          @submit.prevent="renameServer"
+          @keydown.esc="cancelRename"
+        >
+          <label class="sr-only" for="server-rename-input">Server name</label>
+          <input
+            id="server-rename-input"
+            v-model="renameDraft"
+            class="native-input max-w-sm text-lg font-semibold"
+            maxlength="96"
+            autocomplete="off"
+            :aria-invalid="renameValidation !== '' || renameError !== ''"
+            aria-describedby="server-rename-help"
+          />
+          <UButton
+            type="submit"
+            icon="i-lucide-check"
+            :loading="actionBusy === 'rename'"
+            :disabled="actionBusy !== '' || renameValidation !== '' || renameUnchanged"
+            >Save name</UButton
+          >
+          <UButton variant="ghost" :disabled="actionBusy === 'rename'" @click="cancelRename"
+            >Cancel</UButton
+          >
+          <p id="server-rename-help" class="muted w-full text-xs">
+            {{
+              renameError ||
+              renameValidation ||
+              'Only the display name changes. The endpoint, ports, backups, and server ID stay the same.'
+            }}
+          </p>
+        </form>
+        <div v-else class="flex flex-wrap items-center gap-3">
           <h1 class="page-title">{{ server.name }}</h1>
+          <UButton
+            v-if="canRename"
+            variant="ghost"
+            size="xs"
+            icon="i-lucide-pencil"
+            aria-label="Rename server"
+            :disabled="actionBusy !== ''"
+            @click="startRename"
+            >Rename</UButton
+          >
           <StatusBadge :status="effectiveHealth" />
         </div>
         <p class="page-copy">

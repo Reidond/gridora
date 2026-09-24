@@ -4,6 +4,7 @@ import {
   canonicalGameServerManifest,
   commercialReviewTokenFromManifestInput,
   defaultGameServerManifestPolicies,
+  isGameServerName,
   manifestFromDesiredSpec,
   manifestToGameCreateIntent,
   manifestToServerApplyIntent,
@@ -152,6 +153,61 @@ describe('game server manifest control', () => {
     expect(plan.kind).toBe('unsupported-plan')
     if (plan.kind !== 'unsupported-plan') throw new Error('expected an unsupported plan')
     expect(plan.unsupported.map((delta) => delta.path)).toEqual(['spec.plugin', 'spec'])
+  })
+
+  it('plans a name-only delta as one rename entry fenced by the current revision', () => {
+    const current = manifest()
+    const requested: GameServerManifest = {
+      ...current,
+      metadata: { ...current.metadata, name: 'Frontline West' },
+    }
+    expect(planExistingGameServerManifest(state(), requested)).toEqual({
+      kind: 'rename',
+      serverId: 'server-a',
+      desiredRevision: 7,
+      name: 'Frontline West',
+    })
+  })
+
+  it.each([
+    [
+      'config',
+      (spec: GameServerManifest['spec']) => ({ ...spec, config: { scenarioId: 'scenario-b' } }),
+      ['metadata.name'],
+    ],
+    [
+      'policies',
+      (spec: GameServerManifest['spec']) => ({
+        ...spec,
+        updatePolicy: { mode: 'automatic' as const, backupBeforeUpdate: false },
+      }),
+      ['metadata.name'],
+    ],
+    [
+      'endpoint',
+      (spec: GameServerManifest['spec']) => ({
+        ...spec,
+        endpoint: { domain: 'west.example.test' },
+      }),
+      ['metadata.name', 'spec.endpoint'],
+    ],
+  ] as const)('rejects a rename combined with a %s delta', (_name, change, paths) => {
+    const current = manifest()
+    const requested: GameServerManifest = {
+      ...current,
+      metadata: { ...current.metadata, name: 'Frontline West' },
+      spec: change(current.spec),
+    }
+    const plan = planExistingGameServerManifest(state(), requested)
+    expect(plan.kind).toBe('unsupported-plan')
+    if (plan.kind !== 'unsupported-plan') throw new Error('expected an unsupported plan')
+    expect(plan.unsupported.map((delta) => delta.path)).toEqual(paths)
+  })
+
+  it('reuses the create-time name contract for rename validation', () => {
+    expect(isGameServerName('Frontline West')).toBe(true)
+    for (const invalid of ['', ' Frontline', 'Frontline ', 'Front\u0000line', 'x'.repeat(97)])
+      expect(isGameServerName(invalid)).toBe(false)
   })
 
   it('requires an explicit organization-owned node for existing-server moves', () => {

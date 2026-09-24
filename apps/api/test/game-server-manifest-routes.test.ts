@@ -5,13 +5,22 @@ import { AuthorizationError } from '@gridora/contracts'
 import { OrganizationContext } from '@gridora/domain'
 import {
   defaultGameServerManifestPolicies,
+  GameServerManifestIdempotencyConflictError,
+  GameServerManifestNameConflictError,
+  GameServerManifestNotFoundError,
+  GameServerManifestRevisionConflictError,
+  GameServerManifestValidationError,
   manifestFromDesiredSpec,
   type GameServerDesiredSpec,
   type GameServerManifest,
   type GameServerManifestRepository,
   type GameServerManifestStoredState,
+  type GameServerRenameAcceptance,
+  type GameServerRenameCommand,
+  type GameServerRenameError,
 } from '@gridora/game-server-manifest-control'
-import { makeWorkerEffectRuntime } from '@gridora/http-hono-effect'
+import { makeWorkerEffectRuntime, NameConflictProblemCode } from '@gridora/http-hono-effect'
+import { openApiDocument, unsupportedApiRoutes } from '../src/contracts.js'
 import { registerGameServerManifestRoutes } from '../src/game-server-manifest-routes.js'
 
 type TestEnv = { Bindings: Record<string, never> }
@@ -53,6 +62,9 @@ const exported = (): GameServerManifest =>
 
 let acceptedPolicies = 0
 let lastAuditOrigin: string | undefined
+let actorRole: 'operator' | 'viewer' = 'operator'
+let renameCommands: GameServerRenameCommand[] = []
+const renameReceipts = new Map<string, GameServerRenameAcceptance>()
 let app: Hono<TestEnv>
 
 const authorize = (context: HonoContext<TestEnv>) => {
@@ -69,12 +81,60 @@ const authorize = (context: HonoContext<TestEnv>) => {
       organizationId: 'org-a',
       organizationSlug: 'organization-a',
       identityId: 'operator-a',
-      role: 'operator',
+      role: actorRole,
       correlationId: 'manifest-http-correlation',
       membershipRevision: 3,
     }),
   )
 }
+
+/** A small in-memory stand-in that mirrors the D1 rename fences and receipts. */
+const acceptRename = (
+  command: GameServerRenameCommand,
+): Effect.Effect<GameServerRenameAcceptance, GameServerRenameError> =>
+  Effect.suspend((): Effect.Effect<GameServerRenameAcceptance, GameServerRenameError> => {
+    renameCommands.push(command)
+    const receipt = renameReceipts.get(command.idempotencyKey)
+    if (receipt !== undefined)
+      return receipt.name === command.name && receipt.expectedRevision === command.expectedRevision
+        ? Effect.succeed({ ...receipt, disposition: 'adopted' as const })
+        : Effect.fail(
+            new GameServerManifestIdempotencyConflictError({
+              idempotencyKey: command.idempotencyKey,
+            }),
+          )
+    if (command.serverId !== stored.serverId)
+      return Effect.fail(new GameServerManifestNotFoundError({ server: command.serverId }))
+    if (command.expectedRevision !== stored.desiredRevision)
+      return Effect.fail(
+        new GameServerManifestRevisionConflictError({
+          serverId: command.serverId,
+          expectedRevision: command.expectedRevision,
+        }),
+      )
+    if (command.name === stored.name)
+      return Effect.fail(
+        new GameServerManifestValidationError({
+          code: 'name_unchanged',
+          message: 'The new server name must differ from the current name',
+        }),
+      )
+    if (command.name === 'Taken Name')
+      return Effect.fail(
+        new GameServerManifestNameConflictError({ serverId: command.serverId, name: command.name }),
+      )
+    const acceptance: GameServerRenameAcceptance = {
+      disposition: 'created',
+      operationId: `manifest-rename-operation-${renameReceipts.size + 1}`,
+      serverId: command.serverId,
+      name: command.name,
+      expectedRevision: command.expectedRevision,
+      desiredRevision: command.expectedRevision + 1,
+      state: 'succeeded',
+    }
+    renameReceipts.set(command.idempotencyKey, acceptance)
+    return Effect.succeed(acceptance)
+  })
 
 const repository: GameServerManifestRepository = {
   readById: (organizationId, serverId) =>
@@ -98,6 +158,7 @@ const repository: GameServerManifestRepository = {
         state: 'succeeded' as const,
       }
     }),
+  acceptRename,
 }
 
 const request = (path: string, init?: RequestInit) => {
@@ -117,6 +178,9 @@ describe('game server manifest routes', () => {
   beforeEach(() => {
     acceptedPolicies = 0
     lastAuditOrigin = undefined
+    actorRole = 'operator'
+    renameCommands = []
+    renameReceipts.clear()
     app = new Hono<TestEnv>()
     registerGameServerManifestRoutes(app, {
       runtimeFor: () => runtime,
@@ -223,5 +287,198 @@ describe('game server manifest routes', () => {
     )
     expect(response.status).toBe(409)
     expect(acceptedPolicies).toBe(0)
+  })
+
+  describe('rename', () => {
+    const renamePath = '/v1/organizations/organization-a/game-servers/server-a/actions/rename'
+    const renameRequest = (body: unknown, idempotencyKey?: string): RequestInit => ({
+      method: 'POST',
+      ...(idempotencyKey === undefined ? {} : { headers: { 'idempotency-key': idempotencyKey } }),
+      body: JSON.stringify(body),
+    })
+    const renamedManifest = (name: string): GameServerManifest => {
+      const current = exported()
+      return { ...current, metadata: { ...current.metadata, name } }
+    }
+
+    it('publishes the typed rename route in the OpenAPI contract', () => {
+      const path = '/v1/organizations/{organization}/game-servers/{id}/actions/rename'
+      const operation = (openApiDocument.paths[path] as Record<string, unknown> | undefined)?.post
+      expect(operation).toMatchObject({
+        operationId: 'renameGameServer',
+        responses: { '200': { description: 'Success' } },
+        requestBody: {
+          content: {
+            'application/json': {
+              schema: {
+                properties: { name: {}, expectedRevision: {} },
+                required: ['name', 'expectedRevision'],
+              },
+            },
+          },
+        },
+      })
+      expect(
+        (operation as { parameters: readonly { name: string }[] }).parameters.map(
+          ({ name }) => name,
+        ),
+      ).toContain('Idempotency-Key')
+      expect(unsupportedApiRoutes.some((route) => route.path === path)).toBe(false)
+    })
+
+    it('renames through the typed action and replays the original acceptance', async () => {
+      const body = { name: 'Frontline West', expectedRevision: 7 }
+      const first = await request(renamePath, renameRequest(body, 'rename-key-a'))
+      expect(first.status, await first.clone().text()).toBe(200)
+      const accepted = await first.json()
+      expect(accepted).toEqual({
+        acceptance: {
+          disposition: 'created',
+          operationId: 'manifest-rename-operation-1',
+          serverId: 'server-a',
+          name: 'Frontline West',
+          expectedRevision: 7,
+          desiredRevision: 8,
+          state: 'succeeded',
+        },
+        workflowState: 'not-required',
+      })
+      expect(renameCommands[0]).toMatchObject({
+        organizationId: 'org-a',
+        actorId: 'operator-a',
+        idempotencyKey: 'rename-key-a',
+        auditRequestContext: { origin: 'http' },
+      })
+      const replay = await request(renamePath, renameRequest(body, 'rename-key-a'))
+      expect(replay.status).toBe(200)
+      await expect(replay.json()).resolves.toMatchObject({
+        acceptance: { disposition: 'adopted', operationId: 'manifest-rename-operation-1' },
+      })
+      const changed = await request(
+        renamePath,
+        renameRequest({ name: 'Frontline East', expectedRevision: 7 }, 'rename-key-a'),
+      )
+      expect(changed.status).toBe(409)
+      expect(renameReceipts.size).toBe(1)
+    })
+
+    it('denies a viewer and a foreign organization before any rename', async () => {
+      actorRole = 'viewer'
+      const viewer = await request(
+        renamePath,
+        renameRequest({ name: 'Frontline West', expectedRevision: 7 }, 'rename-key-viewer'),
+      )
+      expect(viewer.status).toBe(403)
+      await expect(viewer.json()).resolves.toMatchObject({ code: 'ORGANIZATION_ACCESS_DENIED' })
+      actorRole = 'operator'
+      const foreign = await request(
+        '/v1/organizations/organization-b/game-servers/server-a/actions/rename',
+        renameRequest({ name: 'Frontline West', expectedRevision: 7 }, 'rename-key-foreign'),
+      )
+      expect(foreign.status).toBe(403)
+      const otherTenantServer = await request(
+        '/v1/organizations/organization-a/game-servers/server-of-org-b/actions/rename',
+        renameRequest({ name: 'Frontline West', expectedRevision: 7 }, 'rename-key-cross'),
+      )
+      expect(otherTenantServer.status).toBe(404)
+      expect(renameReceipts.size).toBe(0)
+    })
+
+    it('returns 409 for a stale revision and NAME_CONFLICT for a held name', async () => {
+      const stale = await request(
+        renamePath,
+        renameRequest({ name: 'Frontline West', expectedRevision: 6 }, 'rename-key-stale'),
+      )
+      expect(stale.status).toBe(409)
+      await expect(stale.json()).resolves.toMatchObject({ code: 'CONFLICT' })
+      const conflict = await request(
+        renamePath,
+        renameRequest({ name: 'Taken Name', expectedRevision: 7 }, 'rename-key-conflict'),
+      )
+      expect(conflict.status).toBe(409)
+      await expect(conflict.json()).resolves.toMatchObject({
+        code: NameConflictProblemCode,
+        detail: 'Another game server in this organization already uses this name',
+      })
+      expect(renameReceipts.size).toBe(0)
+    })
+
+    it.each([
+      ['empty', { name: '', expectedRevision: 7 }],
+      ['whitespace-padded', { name: ' Frontline West', expectedRevision: 7 }],
+      ['control-character', { name: 'Front\u0007line', expectedRevision: 7 }],
+      ['too long', { name: 'x'.repeat(97), expectedRevision: 7 }],
+      ['missing revision', { name: 'Frontline West' }],
+      ['extra field', { name: 'Frontline West', expectedRevision: 7, domain: 'x.example.test' }],
+      ['unchanged', { name: 'Frontline', expectedRevision: 7 }],
+    ])('rejects an %s rename request with 400', async (_label, body) => {
+      const response = await request(renamePath, renameRequest(body, 'rename-key-invalid'))
+      expect(response.status).toBe(400)
+      await expect(response.json()).resolves.toMatchObject({ code: 'REQUEST_VALIDATION_FAILED' })
+      expect(renameReceipts.size).toBe(0)
+    })
+
+    it('requires an idempotency key', async () => {
+      const response = await request(
+        renamePath,
+        renameRequest({ name: 'Frontline West', expectedRevision: 7 }),
+      )
+      expect(response.status).toBe(400)
+      expect(renameCommands).toEqual([])
+    })
+
+    it('plans and applies a name-only manifest delta as a rename', async () => {
+      const plan = await request(
+        '/v1/organizations/organization-a/game-server-manifests/plan',
+        manifestRequest(renamedManifest('Frontline West')),
+      )
+      expect(plan.status).toBe(200)
+      await expect(plan.json()).resolves.toEqual({
+        kind: 'rename',
+        serverId: 'server-a',
+        desiredRevision: 7,
+        name: 'Frontline West',
+      })
+      const applied = await request(
+        '/v1/organizations/organization-a/game-server-manifests/apply',
+        manifestRequest(renamedManifest('Frontline West'), 'manifest-rename-a'),
+      )
+      expect(applied.status, await applied.clone().text()).toBe(202)
+      await expect(applied.json()).resolves.toMatchObject({
+        kind: 'rename',
+        acceptance: { name: 'Frontline West', expectedRevision: 7, desiredRevision: 8 },
+        workflowState: 'not-required',
+      })
+      expect(renameCommands).toHaveLength(1)
+      expect(acceptedPolicies).toBe(0)
+    })
+
+    it('rejects a manifest rename combined with another delta or an invalid name', async () => {
+      const current = renamedManifest('Frontline West')
+      const combined = await request(
+        '/v1/organizations/organization-a/game-server-manifests/apply',
+        manifestRequest(
+          {
+            ...current,
+            spec: {
+              ...current.spec,
+              updatePolicy: { mode: 'automatic', backupBeforeUpdate: false },
+            },
+          },
+          'manifest-rename-combined',
+        ),
+      )
+      expect(combined.status).toBe(409)
+      await expect(combined.json()).resolves.toMatchObject({
+        detail: expect.stringContaining('metadata.name'),
+      })
+      const invalid = await request(
+        '/v1/organizations/organization-a/game-server-manifests/apply',
+        manifestRequest(renamedManifest('Frontline West '), 'manifest-rename-invalid'),
+      )
+      expect(invalid.status).toBe(400)
+      expect(renameCommands).toEqual([])
+      expect(acceptedPolicies).toBe(0)
+    })
   })
 })

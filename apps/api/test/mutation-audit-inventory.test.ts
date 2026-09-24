@@ -140,9 +140,16 @@ describe('mutation audit inventory', () => {
       state: 'complete-v1',
       owner: 'game',
       operationPath:
-        'tenant-fenced desired-state resolution followed by a no-op or one reviewed server-provision, game-lifecycle, or policy operation',
+        'tenant-fenced desired-state resolution followed by a no-op or one reviewed server-provision, game-lifecycle, policy, or rename operation',
       auditPath:
         'no-op is side-effect free; accepted mutations delegate to their strict v1 operation and audit receipt',
+    })
+    expect(byOperation('renameGameServer')).toMatchObject({
+      state: 'complete-v1',
+      owner: 'game',
+      operationPath:
+        'terminal revision-fenced tenant rename operation and manifest mutation receipt',
+      auditPath: 'complete tenant v1 rename audit in the same D1 batch',
     })
     expect(byOperation('rebuildNode')).toMatchObject({
       state: 'complete-v1',

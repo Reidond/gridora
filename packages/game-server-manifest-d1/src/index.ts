@@ -11,9 +11,11 @@ import {
   GameServerDraft,
   GameServerManifest,
   GameServerManifestIdempotencyConflictError,
+  GameServerManifestNameConflictError,
   GameServerManifestNotFoundError,
   GameServerManifestPersistenceError,
   GameServerManifestRevisionConflictError,
+  GameServerManifestValidationError,
   canonicalGameServerManifest,
   type GameServerDraftCreateCommand,
   type GameServerDraftRepository,
@@ -23,6 +25,7 @@ import {
   type GameServerManifestRepository,
   type GameServerManifestRepositoryError,
   type GameServerManifestStoredState,
+  type GameServerRenameCommand,
 } from '@gridora/game-server-manifest-control'
 
 export interface GameServerManifestD1Statement {
@@ -105,27 +108,47 @@ const canonical = (value: unknown): unknown => {
   return value
 }
 
-const fingerprintForPolicyUpdate = (command: GameServerManifestPolicyUpdateCommand) =>
+const sha256Fingerprint = (value: unknown, operation: string) =>
   Effect.tryPromise({
     try: async () => {
-      const bytes = new TextEncoder().encode(
-        JSON.stringify(
-          canonical({
-            action: 'game-server-manifest-policy-update',
-            organizationId: command.organizationId,
-            actorId: command.actorId,
-            serverId: command.serverId,
-            expectedRevision: command.expectedRevision,
-            updatePolicy: command.updatePolicy,
-            backupPolicy: command.backupPolicy,
-          }),
-        ),
-      )
+      const bytes = new TextEncoder().encode(JSON.stringify(canonical(value)))
       const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', bytes))
       return Array.from(digest, (byte) => byte.toString(16).padStart(2, '0')).join('')
     },
-    catch: () => persistence('game-server-manifest.policy.fingerprint'),
+    catch: () => persistence(operation),
   })
+
+const fingerprintForPolicyUpdate = (command: GameServerManifestPolicyUpdateCommand) =>
+  sha256Fingerprint(
+    {
+      action: 'game-server-manifest-policy-update',
+      organizationId: command.organizationId,
+      actorId: command.actorId,
+      serverId: command.serverId,
+      expectedRevision: command.expectedRevision,
+      updatePolicy: command.updatePolicy,
+      backupPolicy: command.backupPolicy,
+    },
+    'game-server-manifest.policy.fingerprint',
+  )
+
+/** The action discriminator keeps a policy key from ever adopting a rename. */
+const fingerprintForRename = (command: GameServerRenameCommand) =>
+  sha256Fingerprint(
+    {
+      action: 'game-server-manifest-rename',
+      organizationId: command.organizationId,
+      actorId: command.actorId,
+      serverId: command.serverId,
+      expectedRevision: command.expectedRevision,
+      name: command.name,
+    },
+    'game-server-manifest.rename.fingerprint',
+  )
+
+const policyOperationType = 'server.manifest.policy.update'
+const renameOperationType = 'server.manifest.rename'
+const renameAuditAction = 'game-server.manifest.rename.accepted'
 
 const storedStateSql = `SELECT
   server.organization_id AS organizationId,
@@ -217,6 +240,7 @@ const readReplaySql = `SELECT
   mutation.expected_revision AS expectedRevision,
   mutation.desired_revision AS desiredRevision,
   operation.actor_id AS actorId,
+  operation.type AS operationType,
   operation.status AS state
 FROM game_server_manifest_mutations mutation
 JOIN operations operation
@@ -225,9 +249,10 @@ JOIN operations operation
 WHERE mutation.organization_id = ? AND mutation.idempotency_key = ?`
 
 const decodeReplay = (
-  command: GameServerManifestPolicyUpdateCommand,
+  command: { readonly actorId: string; readonly idempotencyKey: string },
   fingerprint: string,
   value: unknown,
+  operationType: string = policyOperationType,
 ): Effect.Effect<
   GameServerManifestPolicyUpdateAcceptance | null,
   GameServerManifestIdempotencyConflictError | GameServerManifestPersistenceError
@@ -237,7 +262,11 @@ const decodeReplay = (
     const row = record(value)
     if (row === undefined)
       return yield* persistence('game-server-manifest.policy.replay', 'invalid policy replay row')
-    if (text(row, 'fingerprint') !== fingerprint || text(row, 'actorId') !== command.actorId)
+    if (
+      text(row, 'fingerprint') !== fingerprint ||
+      text(row, 'actorId') !== command.actorId ||
+      text(row, 'operationType') !== operationType
+    )
       return yield* new GameServerManifestIdempotencyConflictError({
         idempotencyKey: command.idempotencyKey,
       })
@@ -312,6 +341,62 @@ const stagePolicyAudit = (
       ),
     ),
   )
+
+const stageRenameAudit = (
+  database: GameServerManifestD1Database,
+  command: GameServerRenameCommand,
+  previousName: string,
+  operationId: string,
+  eventId: string,
+  now: string,
+) =>
+  completeAuditEnvelope({
+    occurredAt: now,
+    scope: 'tenant',
+    organizationId: command.organizationId,
+    actor: { type: 'human', id: command.actorId },
+    action: renameAuditAction,
+    target: { type: 'server', id: command.serverId },
+    before: {
+      state: 'captured',
+      summary: { name: previousName, desiredRevision: command.expectedRevision },
+    },
+    after: {
+      state: 'captured',
+      summary: { name: command.name, desiredRevision: command.expectedRevision + 1 },
+    },
+    operationId,
+    request: command.auditRequestContext,
+    result: 'succeeded',
+    error: { classification: 'none', code: null },
+    forced: false,
+    breakGlass: false,
+  }).pipe(
+    Effect.mapError(() => persistence('game-server-manifest.rename.audit-envelope')),
+    Effect.flatMap((envelope) =>
+      stageAuditEnvelope('tenant', eventId, envelope, now).pipe(
+        Effect.mapError(() => persistence('game-server-manifest.rename.audit-stage')),
+        Effect.map((stage) => ({
+          statement: database
+            .prepare(auditEnvelopeStageSql)
+            .bind(...auditEnvelopeStageBindings(stage)),
+          summaryJson: auditEventSummaryJson(envelope),
+        })),
+      ),
+    ),
+  )
+
+// Deleted servers keep their row, so the UNIQUE (organization_id, name)
+// constraint still reserves their names; the holder read matches that.
+const renameFenceSql = `SELECT
+  server.pending_lifecycle_operation_id AS pendingLifecycleOperationId,
+  (SELECT holder.id FROM game_servers holder
+    WHERE holder.organization_id = server.organization_id
+      AND holder.name = ? AND holder.id <> server.id
+    LIMIT 1) AS nameHolderId
+FROM game_servers server
+WHERE server.organization_id = ? AND server.id = ?
+LIMIT 1`
 
 export const makeGameServerManifestD1Repository = (
   database: GameServerManifestD1Database,
@@ -474,7 +559,197 @@ export const makeGameServerManifestD1Repository = (
       return { disposition: 'created', ...result }
     })
 
-  return { readById, readByName, acceptPolicyUpdate }
+  const findRenameReplay = (command: GameServerRenameCommand, fingerprint: string) =>
+    attempt('game-server-manifest.rename.replay', () =>
+      database.prepare(readReplaySql).bind(command.organizationId, command.idempotencyKey).first(),
+    ).pipe(
+      Effect.flatMap((row) => decodeReplay(command, fingerprint, row, renameOperationType)),
+      // The fingerprint binds the name, so an exact replay carries this name.
+      Effect.map((replay) => (replay === null ? null : { ...replay, name: command.name })),
+    )
+
+  const readRenameFence = (command: GameServerRenameCommand) =>
+    attempt('game-server-manifest.rename.fence', () =>
+      database
+        .prepare(renameFenceSql)
+        .bind(command.name, command.organizationId, command.serverId)
+        .first(),
+    ).pipe(
+      Effect.map((value) => {
+        const row = record(value) ?? {}
+        return {
+          pendingLifecycleOperationId: text(row, 'pendingLifecycleOperationId'),
+          nameHolderId: text(row, 'nameHolderId'),
+        }
+      }),
+    )
+
+  /**
+   * Metadata-only rename. The batch never touches the endpoint, DNS, ports,
+   * plugin, placement, backup keys, or spec JSON. The desired revision still
+   * advances so a concurrent writer with the old revision is fenced.
+   */
+  const acceptRename: GameServerManifestRepository['acceptRename'] = (command) =>
+    Effect.gen(function* () {
+      const fingerprint = yield* fingerprintForRename(command)
+      const replay = yield* findRenameReplay(command, fingerprint)
+      if (replay !== null) return replay
+      const current = yield* readById(command.organizationId, command.serverId)
+      const fence = yield* readRenameFence(command)
+      // Lifecycle completion requires desired_revision = observed_revision, so
+      // a rename must not advance the revision under an active lifecycle claim.
+      if (
+        current.desiredRevision !== command.expectedRevision ||
+        fence.pendingLifecycleOperationId !== undefined
+      )
+        return yield* new GameServerManifestRevisionConflictError({
+          serverId: command.serverId,
+          expectedRevision: command.expectedRevision,
+        })
+      if (current.name === command.name)
+        return yield* new GameServerManifestValidationError({
+          code: 'name_unchanged',
+          message: 'The new server name must differ from the current name',
+        })
+      if (fence.nameHolderId !== undefined)
+        return yield* new GameServerManifestNameConflictError({
+          serverId: command.serverId,
+          name: command.name,
+        })
+      const now = configured.now()
+      const operationId = configured.operationId()
+      const auditEventId = configured.auditEventId()
+      const audit = yield* stageRenameAudit(
+        database,
+        command,
+        current.name,
+        operationId,
+        auditEventId,
+        now,
+      )
+      const desiredRevision = command.expectedRevision + 1
+      const result = {
+        operationId,
+        serverId: command.serverId,
+        name: command.name,
+        expectedRevision: command.expectedRevision,
+        desiredRevision,
+        state: 'succeeded' as const,
+      }
+      const statements = [
+        database
+          .prepare(`INSERT INTO operations
+          (id, organization_id, type, resource_type, resource_id, actor_id, status, progress,
+           idempotency_key, correlation_id, revision, created_at, updated_at)
+          VALUES (?, ?, 'server.manifest.rename', 'server', ?, ?, 'succeeded', 100, ?, ?, 1, ?, ?)`)
+          .bind(
+            operationId,
+            command.organizationId,
+            command.serverId,
+            command.actorId,
+            command.idempotencyKey,
+            command.correlationId,
+            now,
+            now,
+          ),
+        database
+          .prepare(`UPDATE game_servers
+          SET name = ?, desired_revision = desired_revision + 1, updated_at = ?
+          WHERE organization_id = ? AND id = ? AND desired_revision = ?
+            AND pending_lifecycle_operation_id IS NULL AND desired_state <> 'deleted'`)
+          .bind(
+            command.name,
+            now,
+            command.organizationId,
+            command.serverId,
+            command.expectedRevision,
+          ),
+        database
+          .prepare(`UPDATE game_server_desired_specs
+          SET desired_revision = desired_revision + 1,
+              source_operation_id = ?,
+              updated_at = ?
+          WHERE organization_id = ? AND server_id = ? AND desired_revision = ?
+            AND EXISTS (
+              SELECT 1 FROM game_servers server
+              WHERE server.organization_id = game_server_desired_specs.organization_id
+                AND server.id = game_server_desired_specs.server_id
+                AND server.desired_revision = ?
+                AND server.name = ?
+                AND server.pending_lifecycle_operation_id IS NULL
+            )`)
+          .bind(
+            operationId,
+            now,
+            command.organizationId,
+            command.serverId,
+            command.expectedRevision,
+            desiredRevision,
+            command.name,
+          ),
+        audit.statement,
+        database
+          .prepare(`INSERT INTO audit_events
+          (id, organization_id, actor_id, action, target_type, target_id, result,
+           correlation_id, summary_json, created_at)
+          VALUES (?, ?, ?, 'game-server.manifest.rename.accepted', 'server', ?, 'succeeded', ?, ?, ?)`)
+          .bind(
+            auditEventId,
+            command.organizationId,
+            command.actorId,
+            command.serverId,
+            command.correlationId,
+            audit.summaryJson,
+            now,
+          ),
+        database
+          .prepare(`INSERT INTO game_server_manifest_mutations
+          (organization_id, idempotency_key, request_fingerprint, operation_id,
+           server_id, expected_revision, desired_revision, acceptance_audit_event_id,
+           result_json, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+          .bind(
+            command.organizationId,
+            command.idempotencyKey,
+            fingerprint,
+            operationId,
+            command.serverId,
+            command.expectedRevision,
+            desiredRevision,
+            auditEventId,
+            JSON.stringify(result),
+            now,
+          ),
+      ]
+      const committed = yield* Effect.result(
+        attempt('game-server-manifest.rename.accept', () => database.batch(statements)),
+      )
+      if (committed._tag === 'Failure') {
+        const adopted = yield* findRenameReplay(command, fingerprint)
+        if (adopted !== null) return adopted
+        // UNIQUE (organization_id, name) is authoritative when another writer
+        // claims the same name between the fence read and this batch.
+        const latestFence = yield* readRenameFence(command).pipe(Effect.result)
+        if (latestFence._tag === 'Success' && latestFence.success.nameHolderId !== undefined)
+          return yield* new GameServerManifestNameConflictError({
+            serverId: command.serverId,
+            name: command.name,
+          })
+        const latest = yield* readById(command.organizationId, command.serverId).pipe(Effect.result)
+        if (
+          latest._tag === 'Success' &&
+          latest.success.desiredRevision !== command.expectedRevision
+        )
+          return yield* new GameServerManifestRevisionConflictError({
+            serverId: command.serverId,
+            expectedRevision: command.expectedRevision,
+          })
+        return yield* committed.failure
+      }
+      return { disposition: 'created', ...result }
+    })
+
+  return { readById, readByName, acceptPolicyUpdate, acceptRename }
 }
 
 const draftFingerprint = (value: unknown) =>

@@ -201,7 +201,7 @@ export const apiMutationAuditInventory: readonly AuditMutationInventoryEntry[] =
   ),
   complete(
     'applyGameServerManifest',
-    'tenant-fenced desired-state resolution followed by a no-op or one reviewed server-provision, game-lifecycle, or policy operation',
+    'tenant-fenced desired-state resolution followed by a no-op or one reviewed server-provision, game-lifecycle, policy, or rename operation',
     'no-op is side-effect free; accepted mutations delegate to their strict v1 operation and audit receipt',
     'game',
   ),
@@ -228,6 +228,12 @@ export const apiMutationAuditInventory: readonly AuditMutationInventoryEntry[] =
     'cloneGameServer',
     'immutable source draft plus server-provision parent operation',
     'tenant clone-source and provision v1 audits',
+    'game',
+  ),
+  complete(
+    'renameGameServer',
+    'terminal revision-fenced tenant rename operation and manifest mutation receipt',
+    'complete tenant v1 rename audit in the same D1 batch',
     'game',
   ),
   complete(

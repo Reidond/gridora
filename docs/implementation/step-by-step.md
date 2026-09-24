@@ -4175,7 +4175,7 @@ token '<'` because the deployed Nuxt runtime had an empty API base.
 - Blocker: Do not tag or release until an exact-main replacement run produces
   the signed artifact and provider smoke succeeds.
 - Decision: ADR 0103.
-||||||| parent of 3c25db6 (chore(ci): refresh pinned actions and vitest, retire Dependabot PRs)
+  ||||||| parent of 3c25db6 (chore(ci): refresh pinned actions and vitest, retire Dependabot PRs)
 
 ## Step 132: Refresh pinned actions and retire Dependabot pull requests
 
@@ -4224,7 +4224,7 @@ token '<'` because the deployed Nuxt runtime had an empty API base.
   v6.1.0 and `anchore/sbom-action` v0.24.2 exist. This change keeps the
   releases that the Dependabot pull requests proposed.
 - Decision: ADR 0105.
-||||||| parent of ed47115 (refactor(api): remove the game-server action 501 catch-all)
+  ||||||| parent of ed47115 (refactor(api): remove the game-server action 501 catch-all)
 
 ## Step 133: Remove the game-server action 501 catch-all
 
@@ -4261,7 +4261,7 @@ token '<'` because the deployed Nuxt runtime had an empty API base.
   default-timeout failures that moved between runs.
 - Blocker: None.
 - Decision: ADR 0065.
-||||||| parent of fb7f124 (feat(cli): store credentials in the Windows vault and smoke-test the packaged binary)
+  ||||||| parent of fb7f124 (feat(cli): store credentials in the Windows vault and smoke-test the packaged binary)
 
 ## Step 134: Store Windows CLI credentials in the platform vault
 
@@ -4310,7 +4310,7 @@ token '<'` because the deployed Nuxt runtime had an empty API base.
   proven only against the injected process fake. CI runs the binary smoke on
   Ubuntu only.
 - Decision: ADR 0108.
-||||||| parent of f6bbbf7 (docs(record): close pending steps 109 and 111 with the recorded gate)
+  ||||||| parent of f6bbbf7 (docs(record): close pending steps 109 and 111 with the recorded gate)
 
 ## Step 135: Close the pending steps 109 and 111
 
@@ -4349,3 +4349,49 @@ token '<'` because the deployed Nuxt runtime had an empty API base.
 - Blocker: The five node-bootstrap tests need a pass at the default timeout on
   an idle host or in CI before a release step cites this gate.
 - Decision: ADR 0086.
+
+## Step 136: Rename a game server as a metadata-only operation
+
+- Status: local
+- Situation: Manifest planning rejected every `metadata.name` change. A name
+  change forced delete-and-recreate. The API, CLI, and web console had no
+  rename path.
+- Task: Make rename one durable, idempotent, revision-fenced mutation that
+  changes only the display name. Keep one mutation per manifest apply.
+- Action: Plan a name-only manifest delta as `rename`. Reject a rename that is
+  combined with another delta. Reuse the create-time server name schema.
+- Action: Add `POST /v1/organizations/:organization/game-servers/:serverId/actions/rename`
+  for the Operator role. Register it before the `actions/*` 501 fallback. Add
+  it to the OpenAPI routes, the mutation audit inventory, and the generated
+  client.
+- Action: Write the terminal operation, the new name, the next desired
+  revision, the staged v1 audit envelope, the compact audit row, and the
+  manifest mutation receipt in one D1 batch. Add migration 0064 to accept the
+  rename operation and audit pair in the receipt guard.
+- Action: Return HTTP 409 `NAME_CONFLICT` when another server in the
+  organization holds the name. Return a revision conflict for a stale revision
+  or a pending lifecycle operation. Return HTTP 400 for an invalid or unchanged
+  name.
+- Action: Add `gridora servers rename <server> --name <name>
+--expected-revision <revision>` and an inline rename control next to the web
+  server title.
+- Result: A rename does not change the endpoint, DNS, ports, plugin, placement,
+  spec JSON, backup keys, R2 keys, or Durable Object names. A lost response
+  adopts the original operation. A reused key with a different payload,
+  actor, or action conflicts.
+- Evidence: `packages/game-server-manifest-control`,
+  `packages/game-server-manifest-d1`,
+  `packages/migrations/sql/0064_game_server_rename_mutations.sql`,
+  `apps/api/src/game-server-manifest-routes.ts`, `apps/api/src/contracts.ts`,
+  `packages/http-hono-effect`, `packages/generated-client`,
+  `apps/cli/src/commands.ts`, `apps/web/pages/o/[slug]/servers/[id].vue`, and
+  demo-mode screenshots attached to pull request 29 with `gh pr comment --attach`.
+- Verification: The focused control, D1, route, composed API, problem mapping,
+  audit inventory, generated client, and CLI suites pass 111 tests. The
+  complete gate reports 921 formatted files, zero lint or type errors across
+  522 files, 1,532 passing tests in 224 passing files, and 112 successful
+  builds. Six existing Node bootstrap and Cloudflare binding tests exceed the
+  5-second default timeout on the local machine and pass with a 60-second
+  timeout.
+- Blocker: No Worker, D1 migration, or game server was deployed or changed.
+- Decision: ADR 0107.

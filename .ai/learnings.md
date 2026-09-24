@@ -23,3 +23,19 @@ file end (a chronological catch-all misleads the consolidator's clustering).
 to its home above and removed here.
 
 ---
+
+## Common Pitfalls
+
+### [2026-09-24] A terminal server mutation that advances desired_revision must fence pending lifecycle work
+
+`game-lifecycle-d1` completes an operation only while `game_servers.desired_revision =
+observed_revision`. A metadata-only mutation (policy update, rename) that advances
+`desired_revision` must require `pending_lifecycle_operation_id IS NULL`, or it strands the active
+lifecycle completion. `operations` also has `UNIQUE (organization_id, idempotency_key)` across all
+actions, so a key reused by a different action fails the batch; read the action receipt first.
+
+### [2026-09-24] Shell-backed infra tests exceed the 5-second default under full-suite load
+
+`tests/infrastructure/node-bootstrap.test.ts` and one `tests/security/cloudflare-binding-bridge.test.ts`
+case time out at 5 s during a loaded local `pnpm test` and pass with `--testTimeout=60000`.
+Confirm with an isolated rerun before attributing those failures to a change.

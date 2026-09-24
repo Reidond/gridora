@@ -631,6 +631,14 @@ export const parseCommand = (argv: ReadonlyArray<string>): Effect.Effect<ParsedC
           backupPolicy,
           forcedCleanup: true,
         })
+      } else if (group === 'servers' && action === 'rename') {
+        const server = requireIdentifier(id, 'server')
+        if (organizationName === undefined || expectedRevision === undefined)
+          throw new Error('servers rename requires --name and --expected-revision')
+        route = tenant('POST', `/v1/game-servers/${server}/actions/rename`, {
+          name: organizationName,
+          expectedRevision,
+        })
       } else if (group === 'servers' && action === 'clone') {
         const server = requireIdentifier(id, 'server')
         if (file === undefined) throw new Error('servers clone requires --file')
@@ -774,6 +782,7 @@ export const parseCommand = (argv: ReadonlyArray<string>): Effect.Effect<ParsedC
       const organizationLeave = group === 'organizations' && action === 'leave'
       const organizationDelete = group === 'organizations' && action === 'delete'
       const operationCancel = group === 'operations' && action === 'cancel'
+      const serverRename = group === 'servers' && action === 'rename'
       const fileCommand =
         (group === 'servers' && ['apply', 'plan', 'update', 'clone'].includes(action ?? '')) ||
         (group === 'manifest' &&
@@ -784,7 +793,7 @@ export const parseCommand = (argv: ReadonlyArray<string>): Effect.Effect<ParsedC
       if (
         !organizationCreate &&
         !organizationUpdate &&
-        (organizationName !== undefined ||
+        ((organizationName !== undefined && !serverRename) ||
           organizationSlug !== undefined ||
           timezone !== undefined ||
           defaultRegion !== undefined ||
@@ -835,6 +844,7 @@ export const parseCommand = (argv: ReadonlyArray<string>): Effect.Effect<ParsedC
         !organizationLeave &&
         !organizationDelete &&
         !operationCancel &&
+        !serverRename &&
         !gameRevisionOption &&
         !nodeRevisionOption &&
         !providerRevisionOption &&
