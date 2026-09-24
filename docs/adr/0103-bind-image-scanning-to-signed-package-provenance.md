@@ -130,6 +130,12 @@ Amendment (2026-09-24, STE Step 131): the image keeps
 pending-upgrade gate, and the node's later unattended upgrades install every
 published Ubuntu update instead of a machine-id-selected phased subset.
 
+Amendment (2026-09-24, STE Step 138): the exact Docker pins must track the
+newest packages in Docker's `noble/stable` repository, because the
+pending-upgrade gate refuses an image with any older pin, and the image
+workflow's `validate` job now runs `infra/scripts/check-docker-pins.sh` to fail
+on a stale pin before `build-local` starts.
+
 ## Verification
 
 Require Bash parsing, ShellCheck, workflow parsing, focused rootfs policy,

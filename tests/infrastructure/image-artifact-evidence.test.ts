@@ -32,7 +32,7 @@ const dockerFingerprint = '9DC858229FC7DD38854AE2D88D81803C0EBFCD88'
 const dockerPackages = [
   {
     name: 'containerd.io',
-    version: '2.3.3-1~ubuntu.24.04~noble',
+    version: '2.3.5-1~ubuntu.24.04~noble',
     paths: [
       '/usr/bin/containerd',
       '/usr/bin/containerd-shim-runc-v2',
@@ -42,22 +42,22 @@ const dockerPackages = [
   },
   {
     name: 'docker-ce',
-    version: '5:29.7.2-1~ubuntu.24.04~noble',
+    version: '5:29.8.1-1~ubuntu.24.04~noble',
     paths: ['/usr/bin/docker-proxy', '/usr/bin/dockerd'],
   },
   {
     name: 'docker-ce-cli',
-    version: '5:29.7.2-1~ubuntu.24.04~noble',
+    version: '5:29.8.1-1~ubuntu.24.04~noble',
     paths: ['/usr/bin/docker'],
   },
   {
     name: 'docker-buildx-plugin',
-    version: '0.36.1-1~ubuntu.24.04~noble',
+    version: '0.37.1-1~ubuntu.24.04~noble',
     paths: ['/usr/libexec/docker/cli-plugins/docker-buildx'],
   },
   {
     name: 'docker-compose-plugin',
-    version: '5.5.0-1~ubuntu.24.04~noble',
+    version: '5.5.1-1~ubuntu.24.04~noble',
     paths: ['/usr/libexec/docker/cli-plugins/docker-compose'],
   },
 ] as const

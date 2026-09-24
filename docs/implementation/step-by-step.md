@@ -4454,3 +4454,70 @@ token '<'` because the deployed Nuxt runtime had an empty API base.
   No workflow was dispatched with `live_test=true`, and no provider resource
   was created.
 - Decision: ADR 0106.
+
+## Step 138: Refresh the Docker package pins and check pin drift
+
+- Status: local
+- Situation: Protected exact-main image run 36040577564 failed `build-local`
+  after 8 minutes 39 seconds. The Step 128 pending-upgrade gate found five
+  pending installs from `Docker CE:noble`: `docker-ce` and `docker-ce-cli`
+  5:29.7.2 to 5:29.8.1, `containerd.io` 2.3.3 to 2.3.5,
+  `docker-buildx-plugin` 0.36.1 to 0.37.1, and `docker-compose-plugin` 5.5.0
+  to 5.5.1. Ubuntu reported 0 not upgraded, so the Step 131 phased-updates
+  fix holds. The run produced no artifact, and provider smoke did not run.
+- Task: Move the exact Docker pins to the current packages. Make the next
+  drift fail before the image build starts.
+- Action: Read the newest versions from Docker's `noble/stable` amd64
+  `Packages` index. Set `docker-ce` and `docker-ce-cli` to
+  `5:29.8.1-1~ubuntu.24.04~noble`, `containerd.io` to
+  `2.3.5-1~ubuntu.24.04~noble`, `docker-buildx-plugin` to
+  `0.37.1-1~ubuntu.24.04~noble`, and `docker-compose-plugin` to
+  `5.5.1-1~ubuntu.24.04~noble` in `provision.sh` and in
+  `validate-rootfs-package-policy.sh`.
+- Action: Add `infra/scripts/check-docker-pins.sh`. It reads the five pins
+  from `provision.sh`, downloads the index over HTTPS, and compares versions
+  with the Debian ordering rules. It fails when a package is absent, a pinned
+  version is not published, or a newer version exists.
+- Action: Run the check in the `validate` job of the Node image workflow
+  directly after checkout. `build-local` needs `validate`, so a stale pin now
+  stops a dispatch before the QCOW2 build. Add the script to the Bash and
+  ShellCheck lists of the same job.
+- Action: Add a test that requires one identical pin block in both scripts.
+- Action: Keep the Docker Engine API check (`>= 1.43`) and the nine
+  Docker-owned binary paths unchanged.
+- Result: The image installs the newest signed Docker packages again. A
+  future Docker release fails the image workflow in its first job with the
+  package, the pin, and the newest version.
+- Evidence: `infra/packer/scripts/provision.sh`,
+  `infra/scripts/validate-rootfs-package-policy.sh`,
+  `infra/scripts/check-docker-pins.sh`, `.github/workflows/image.yml`,
+  `tests/image/image-assets.test.ts`,
+  `tests/infrastructure/image-artifact-evidence.test.ts`,
+  `tests/infrastructure/docker-pin-check.test.ts`, the failed protected run
+  36040577564, and the ADR 0103 amendment note.
+- Evidence: A clean `linux/amd64` `ubuntu:24.04` container verified the
+  Docker key fingerprint, installed the five new pinned packages from the
+  Noble source, and printed no pending Docker upgrades. `dpkg -L` listed the
+  same nine binary paths: `/usr/bin/containerd`,
+  `/usr/bin/containerd-shim-runc-v2`, `/usr/bin/ctr`, `/usr/bin/runc`,
+  `/usr/bin/docker-proxy`, `/usr/bin/dockerd`, `/usr/bin/docker`, and the
+  `docker-buildx` and `docker-compose` CLI plugins.
+- Evidence: The Node image workflow runs only on `workflow_dispatch` (ADR
+  0105). The check therefore runs at the start of each dispatch, not on pull
+  requests. Run the script locally before a dispatch.
+- Verification: Bash parsing passes for the three changed scripts. ShellCheck
+  0.9.0 from the pinned `infra/images/Dockerfile.validation` image passes for
+  the 17 scripts that the image workflow checks. Against the live index, the
+  check passes with the new pins and reports all five packages with the
+  previous pins. It gives the same result with `mawk` in the validation image.
+  The focused pin-check, image-asset, and rootfs-evidence tests pass 49 tests.
+  The new tests reject each of the five drifted packages, a missing package, an
+  unpublished pin, an empty or unreadable index, a missing or duplicated pin,
+  and a failed download. `pnpm check` reports 948 formatted files and no lint
+  or type errors across 536 files. Under a host load average above 200, 75
+  shell-backed and D1-backed tests in 21 files exceeded the default 5-second test
+  or 10-second hook timeout. With 60-second limits, `pnpm test` passes 1,632
+  tests in 231 files, with 3 skipped. `pnpm build` completes 114 builds.
+- Blocker: Do not tag or release until an exact-main replacement run produces
+  the signed artifact and provider smoke succeeds.
+- Decision: ADR 0103.

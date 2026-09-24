@@ -38,6 +38,8 @@ jobs:
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Check Docker package pins against the Docker repository index
+        run: bash infra/scripts/check-docker-pins.sh
       - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
         with:
           run_install: false
@@ -133,6 +135,7 @@ jobs:
             infra/images/gridora-node-bootstrap-cleanup \
             infra/images/recovery-check \
             infra/images/validate-cloudflared-token \
+            infra/scripts/check-docker-pins.sh \
             infra/scripts/extract-rootfs-evidence.sh \
             infra/scripts/generate-sbom.sh \
             infra/scripts/scan-artifact.sh \
@@ -151,6 +154,7 @@ jobs:
             infra/images/gridora-node-bootstrap-cleanup \
             infra/images/recovery-check \
             infra/images/validate-cloudflared-token \
+            infra/scripts/check-docker-pins.sh \
             infra/scripts/extract-rootfs-evidence.sh \
             infra/scripts/generate-sbom.sh \
             infra/scripts/scan-artifact.sh \
