@@ -4175,7 +4175,6 @@ token '<'` because the deployed Nuxt runtime had an empty API base.
 - Blocker: Do not tag or release until an exact-main replacement run produces
   the signed artifact and provider smoke succeeds.
 - Decision: ADR 0103.
-  ||||||| parent of 3c25db6 (chore(ci): refresh pinned actions and vitest, retire Dependabot PRs)
 
 ## Step 132: Refresh pinned actions and retire Dependabot pull requests
 
@@ -4224,7 +4223,6 @@ token '<'` because the deployed Nuxt runtime had an empty API base.
   v6.1.0 and `anchore/sbom-action` v0.24.2 exist. This change keeps the
   releases that the Dependabot pull requests proposed.
 - Decision: ADR 0105.
-  ||||||| parent of ed47115 (refactor(api): remove the game-server action 501 catch-all)
 
 ## Step 133: Remove the game-server action 501 catch-all
 
@@ -4261,7 +4259,6 @@ token '<'` because the deployed Nuxt runtime had an empty API base.
   default-timeout failures that moved between runs.
 - Blocker: None.
 - Decision: ADR 0065.
-  ||||||| parent of fb7f124 (feat(cli): store credentials in the Windows vault and smoke-test the packaged binary)
 
 ## Step 134: Store Windows CLI credentials in the platform vault
 
@@ -4310,7 +4307,6 @@ token '<'` because the deployed Nuxt runtime had an empty API base.
   proven only against the injected process fake. CI runs the binary smoke on
   Ubuntu only.
 - Decision: ADR 0108.
-  ||||||| parent of f6bbbf7 (docs(record): close pending steps 109 and 111 with the recorded gate)
 
 ## Step 135: Close the pending steps 109 and 111
 
