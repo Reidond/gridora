@@ -8,7 +8,9 @@ rootfs_archive=${4:?usage: verify-artifact.sh ARTIFACT CHECKSUMS SBOM ROOTFS_ARC
 rootfs_evidence=${5:?usage: verify-artifact.sh ARTIFACT CHECKSUMS SBOM ROOTFS_ARCHIVE ROOTFS_EVIDENCE}
 
 command -v cosign >/dev/null || { echo "cosign is required" >&2; exit 2; }
-sha256sum --check "${checksums}"
+# The checksum file lists basenames; verify it from its own directory so the artifact
+# can be checked wherever it was downloaded.
+(cd "$(dirname "${checksums}")" && sha256sum --check "$(basename "${checksums}")")
 test -s "${sbom}"
 test -s "${rootfs_archive}"
 test -s "${rootfs_evidence}"

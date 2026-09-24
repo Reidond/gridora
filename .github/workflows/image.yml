@@ -573,7 +573,12 @@ jobs:
             "$IMAGE_PATH" \
             "$IMAGE_PATH.rootfs.tar" \
             "$IMAGE_PATH.rootfs-evidence.json"
-          sha256sum "$IMAGE_PATH" "$IMAGE_PATH.rootfs.tar" > "$IMAGE_PATH.sha256"
+          # Record basenames so the checksum file verifies from any directory the artifact lands in.
+          (
+            cd "$(dirname "$IMAGE_PATH")"
+            image="$(basename "$IMAGE_PATH")"
+            sha256sum "$image" "$image.rootfs.tar" > "$image.sha256"
+          )
       - name: Validate signed rootfs package policy
         run: |
           infra/scripts/validate-rootfs-package-policy.sh \
@@ -607,7 +612,7 @@ jobs:
           cp "$RUNNER_TEMP/identity.sig" "$IMAGE_PATH.identity.sig"
           cp "$RUNNER_TEMP/identity-public.pem" "$IMAGE_PATH.identity-public.pem"
           # The checksum file lists the image and the rootfs archive; select the image line only.
-          image_sha=$(awk -v path="$IMAGE_PATH" '$2 == path { print $1 }' "$IMAGE_PATH.sha256")
+          image_sha=$(awk -v name="$(basename "$IMAGE_PATH")" '$2 == name { print $1 }' "$IMAGE_PATH.sha256")
           [[ "$image_sha" =~ ^[a-f0-9]{64}$ ]] || {
             echo "no single checksum line for $IMAGE_PATH in $IMAGE_PATH.sha256" >&2
             exit 1
