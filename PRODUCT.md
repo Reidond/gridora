@@ -872,6 +872,7 @@ gridora servers show <server>
 gridora servers start|stop|restart <server>
 gridora servers update <server>
 gridora servers move <server> --node <node>
+gridora servers rename <server> --name <name>
 gridora servers delete <server>
 
 gridora servers config get <server>

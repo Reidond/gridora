@@ -821,6 +821,72 @@ spec:
       Effect.runPromise(parseCommand(['servers', 'move', 'server-1', '--node', 'node-2'])),
     ).rejects.toMatchObject({ message: expect.stringContaining('--expected-revision') })
   })
+  it('sends a revision-fenced rename to the typed server action', async () => {
+    await expect(
+      Effect.runPromise(
+        parseCommand([
+          'servers',
+          'rename',
+          'server-1',
+          '--name',
+          'Frontline West',
+          '--expected-revision',
+          '7',
+          '--idempotency-key',
+          'server-rename-1',
+        ]),
+      ),
+    ).resolves.toMatchObject({
+      request: {
+        method: 'POST',
+        path: '/v1/game-servers/server-1/actions/rename',
+        organizationScoped: true,
+        idempotencyKey: 'server-rename-1',
+        body: { name: 'Frontline West', expectedRevision: 7 },
+      },
+    })
+    for (const [argv, message] of [
+      [['servers', 'rename', 'server-1', '--expected-revision', '7'], '--name'],
+      [['servers', 'rename', 'server-1', '--name', 'Frontline West'], '--expected-revision'],
+      [
+        ['servers', 'rename', 'server-1', '--name', 'Frontline West', '--expected-revision', '7'],
+        '--idempotency-key',
+      ],
+      [
+        [
+          'servers',
+          'rename',
+          '../server',
+          '--name',
+          'Frontline West',
+          '--expected-revision',
+          '7',
+          '--idempotency-key',
+          'server-rename-1',
+        ],
+        'invalid',
+      ],
+      [
+        [
+          'servers',
+          'rename',
+          'server-1',
+          '--name',
+          'Frontline West',
+          '--slug',
+          'frontline',
+          '--expected-revision',
+          '7',
+          '--idempotency-key',
+          'server-rename-1',
+        ],
+        'organization setup options',
+      ],
+    ] as const)
+      await expect(Effect.runPromise(parseCommand(argv))).rejects.toMatchObject({
+        message: expect.stringContaining(message),
+      })
+  })
   it('converts a manifest file to an API create intent without forwarding image authority', async () => {
     const requests: ApiRequest[] = []
     const layers = Layer.mergeAll(

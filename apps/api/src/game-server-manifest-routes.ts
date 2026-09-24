@@ -14,10 +14,13 @@ import {
   GameServerDraftScheduleInput,
   decodeGameServerManifestInput,
   GameServerManifestIdempotencyConflictError,
+  GameServerManifestNameConflictError,
   GameServerManifestNotFoundError,
   GameServerManifestPersistenceError,
   GameServerManifestRevisionConflictError,
   GameServerManifestValidationError,
+  GameServerRenameInput,
+  isGameServerName,
   manifestFromDesiredSpec,
   manifestToServerApplyIntent,
   manifestToServerCreateIntent,
@@ -161,6 +164,31 @@ const decodeCloneInput = (request: Request) =>
     Effect.mapError(() => invalid('The request does not match the clone contract')),
   )
 
+const decodeRenameInput = (request: Request) =>
+  Effect.tryPromise({
+    try: () => request.json(),
+    catch: () => invalid('The request body must be valid JSON'),
+  }).pipe(
+    Effect.flatMap((value) =>
+      Schema.decodeUnknownEffect(GameServerRenameInput, { onExcessProperty: 'error' })(value),
+    ),
+    Effect.mapError(() =>
+      invalid(
+        'The request does not match the rename contract: name must be 1-96 visible characters without surrounding whitespace',
+      ),
+    ),
+  )
+
+/** A manifest rename reuses the create-time name contract before any durable write. */
+const requireValidRename = (plan: ManifestPlanResponse) =>
+  plan.kind === 'rename' && !isGameServerName(plan.name)
+    ? Effect.fail(
+        invalid(
+          'metadata.name must be 1-96 visible characters without surrounding whitespace to rename a server',
+        ),
+      )
+    : Effect.void
+
 const requireOperator = (actor: AuthorizedContext) =>
   actor.role === 'operator' || actor.role === 'administrator' || actor.role === 'owner'
     ? Effect.void
@@ -199,7 +227,14 @@ const mapManifestError = (error: unknown): RequestFailure => {
   if (error instanceof NotFoundError) return error
   if (error instanceof PersistenceError) return error
   if (error instanceof GameServerManifestValidationError)
-    return invalid('The request does not match the GameServer v1alpha1 manifest contract')
+    return error.code === 'name_unchanged'
+      ? invalid(error.message)
+      : invalid('The request does not match the GameServer v1alpha1 manifest contract')
+  if (error instanceof GameServerManifestNameConflictError)
+    return new ConflictError({
+      code: 'name_conflict',
+      message: 'Another game server in this organization already uses this name',
+    })
   if (error instanceof GameServerManifestNotFoundError)
     return new NotFoundError({ resource: 'game-server', id: error.server })
   if (error instanceof GameServerManifestIdempotencyConflictError)
@@ -544,6 +579,34 @@ export const registerGameServerManifestRoutes = <E extends HonoEnv, R>(
     )
   }
 
+  // Registered before the API's `actions/*` 501 catch-all. Rename is terminal
+  // and metadata-only, so it returns the completed acceptance without a Workflow.
+  app.post(
+    '/v1/organizations/:organization/game-servers/:serverId/actions/rename',
+    handler((context) =>
+      Effect.gen(function* () {
+        const actor = yield* authorize(context, 'operator').pipe(Effect.mapError(mapManifestError))
+        const serverId = yield* decodeServerId(context.req.param('serverId') ?? '')
+        const idempotencyKey = yield* decodeIdempotencyKey(context.req.header('idempotency-key'))
+        const input = yield* decodeRenameInput(context.req.raw)
+        const repository = yield* dependencies.repository(context.env)
+        const acceptance = yield* repository
+          .acceptRename({
+            organizationId: actor.organizationId,
+            actorId: actor.identityId,
+            correlationId: actor.correlationId,
+            auditRequestContext: dependencies.auditRequestContext(context),
+            idempotencyKey,
+            serverId,
+            expectedRevision: input.expectedRevision,
+            name: input.name,
+          })
+          .pipe(Effect.mapError(mapManifestError))
+        return jsonResponse({ acceptance, workflowState: 'not-required' as const })
+      }),
+    ),
+  )
+
   app.get(
     exportPath,
     handler((context) =>
@@ -581,6 +644,7 @@ export const registerGameServerManifestRoutes = <E extends HonoEnv, R>(
           target.kind === 'new'
             ? yield* planNew(context, actor, decoded.manifest)
             : planExistingGameServerManifest(target.state, decoded.manifest)
+        yield* requireValidRename(response)
         return jsonResponse(response satisfies ManifestPlanResponse)
       }),
     ),
@@ -636,6 +700,29 @@ export const registerGameServerManifestRoutes = <E extends HonoEnv, R>(
             desiredRevision: plan.desiredRevision,
             workflowState: 'not-required',
           } satisfies ManifestApplyResponse)
+        if (plan.kind === 'rename') {
+          yield* requireValidRename(plan)
+          const accepted = yield* repository
+            .acceptRename({
+              organizationId: actor.organizationId,
+              actorId: actor.identityId,
+              correlationId: actor.correlationId,
+              auditRequestContext: dependencies.auditRequestContext(context),
+              idempotencyKey,
+              serverId: plan.serverId,
+              expectedRevision: plan.desiredRevision,
+              name: plan.name,
+            })
+            .pipe(Effect.mapError(mapManifestError))
+          return jsonResponse(
+            {
+              kind: 'rename',
+              acceptance: accepted,
+              workflowState: 'not-required',
+            } satisfies ManifestApplyResponse,
+            202,
+          )
+        }
         if (plan.kind === 'update-policies') {
           const accepted = yield* repository
             .acceptPolicyUpdate({

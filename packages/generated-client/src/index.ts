@@ -57,6 +57,8 @@ import {
   GameServerManifestApplyResponse,
   GameServerCloneInput,
   GameServerCloneResponse,
+  GameServerRenameInput,
+  GameServerRenameResponse,
   GameServerDraftCreateResponse,
   GameServerDraftScheduleInput,
   GameServerDraftScheduleResponse,
@@ -1157,6 +1159,19 @@ export class GridoraClient {
       'POST',
       `/v1/organizations/${encoded(organization)}/game-servers/${encoded(id)}/actions/clone`,
       GameServerCloneResponse,
+      body,
+      options,
+    )
+  renameGameServer = (
+    organization: string,
+    id: string,
+    body: typeof GameServerRenameInput.Type,
+    options: RequestOptions,
+  ) =>
+    this.request(
+      'POST',
+      `/v1/organizations/${encoded(organization)}/game-servers/${encoded(id)}/actions/rename`,
+      GameServerRenameResponse,
       body,
       options,
     )

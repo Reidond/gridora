@@ -244,4 +244,9 @@ export const migrations: ReadonlyArray<Migration> = [
     name: 'game_server_drafts_and_schedules',
     file: '0063_game_server_drafts_and_schedules.sql',
   },
+  {
+    id: 64,
+    name: 'game_server_rename_mutations',
+    file: '0064_game_server_rename_mutations.sql',
+  },
 ]

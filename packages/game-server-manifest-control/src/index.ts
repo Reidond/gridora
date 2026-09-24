@@ -14,6 +14,7 @@ import {
   normalizeGameUpdatePolicy,
 } from '@gridora/game-lifecycle-control'
 import {
+  ServerCreateIntent,
   ServerResourceRequest,
   ServerApplyPlanSchema,
   ServerProvisionAcceptanceSchema,
@@ -29,6 +30,14 @@ const Name = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(160))
 const Domain = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(253))
 const PositiveRevision = Schema.Int.check(Schema.isGreaterThanOrEqualTo(1))
 const JsonObject = Schema.Record(Schema.String, Schema.Unknown)
+
+/**
+ * Rename reuses the exact create-time server name contract: non-empty, at most
+ * 96 characters, no control characters, and no leading or trailing whitespace.
+ */
+export const GameServerName = ServerCreateIntent.fields.name
+export type GameServerName = typeof GameServerName.Type
+export const isGameServerName = Schema.is(GameServerName)
 
 export const GameServerManifestApiVersion = 'games.gridora.example/v1alpha1' as const
 
@@ -377,6 +386,12 @@ export const ExistingGameServerManifestPlan = Schema.Union([
     desiredRevision: PositiveRevision,
   }),
   Schema.Struct({
+    kind: Schema.Literal('rename'),
+    serverId: Identifier,
+    desiredRevision: PositiveRevision,
+    name: Name,
+  }),
+  Schema.Struct({
     kind: Schema.Literal('unsupported-plan'),
     serverId: Identifier,
     desiredRevision: PositiveRevision,
@@ -421,6 +436,30 @@ const GameServerManifestPolicyAcceptance = Schema.Struct({
   desiredRevision: PositiveRevision,
   state: Schema.Literal('succeeded'),
 })
+
+/** A rename is terminal: display metadata changes in the same D1 batch as its evidence. */
+export const GameServerRenameAcceptance = Schema.Struct({
+  disposition: Schema.Literals(['created', 'adopted']),
+  operationId: Identifier,
+  serverId: Identifier,
+  name: GameServerName,
+  expectedRevision: PositiveRevision,
+  desiredRevision: PositiveRevision,
+  state: Schema.Literal('succeeded'),
+})
+export type GameServerRenameAcceptance = typeof GameServerRenameAcceptance.Type
+
+export const GameServerRenameInput = Schema.Struct({
+  name: GameServerName,
+  expectedRevision: PositiveRevision,
+})
+export type GameServerRenameInput = typeof GameServerRenameInput.Type
+
+export const GameServerRenameResponse = Schema.Struct({
+  acceptance: GameServerRenameAcceptance,
+  workflowState: Schema.Literal('not-required'),
+})
+export type GameServerRenameResponse = typeof GameServerRenameResponse.Type
 export const GameServerManifestApplyResponse = Schema.Union([
   Schema.Struct({
     kind: Schema.Literal('no-op'),
@@ -435,6 +474,11 @@ export const GameServerManifestApplyResponse = Schema.Union([
   Schema.Struct({
     kind: Schema.Literal('policy-update'),
     acceptance: GameServerManifestPolicyAcceptance,
+    workflowState: Schema.Literal('not-required'),
+  }),
+  Schema.Struct({
+    kind: Schema.Literal('rename'),
+    acceptance: GameServerRenameAcceptance,
     workflowState: Schema.Literal('not-required'),
   }),
   Schema.Struct({
@@ -557,11 +601,7 @@ export const planExistingGameServerManifest = (
   requested: GameServerManifest,
 ): ExistingGameServerManifestPlan => {
   const unsupported: GameServerManifestUnsupportedDelta[] = []
-  if (requested.metadata.name !== current.name)
-    unsupported.push({
-      path: 'metadata.name',
-      reason: 'renaming an existing server is not implemented',
-    })
+  const nameChanged = requested.metadata.name !== current.name
   if (!same(requested.spec.plugin, current.spec.plugin))
     unsupported.push({
       path: 'spec.plugin',
@@ -593,6 +633,13 @@ export const planExistingGameServerManifest = (
     Boolean,
   ).length
 
+  // A rename is its own durable mutation. It never rides along with another
+  // delta, so an apply cannot half-succeed with a new name and an old spec.
+  if (nameChanged && (unsupported.length > 0 || changeCount > 0))
+    unsupported.unshift({
+      path: 'metadata.name',
+      reason: 'a rename cannot be combined with another change in one manifest apply',
+    })
   if (unsupported.length > 0 || changeCount > 1)
     return {
       kind: 'unsupported-plan',
@@ -609,6 +656,13 @@ export const planExistingGameServerManifest = (
               },
             ]),
       ],
+    }
+  if (nameChanged)
+    return {
+      kind: 'rename',
+      serverId: current.serverId,
+      desiredRevision: current.desiredRevision,
+      name: requested.metadata.name,
     }
   if (!configChanged && !modsChanged && !policiesChanged && !placementChanged)
     return { kind: 'no-op', serverId: current.serverId, desiredRevision: current.desiredRevision }
@@ -673,6 +727,11 @@ export class GameServerManifestRevisionConflictError extends Schema.TaggedError<
   'GameServerManifestRevisionConflictError',
   { serverId: Schema.String, expectedRevision: PositiveRevision },
 ) {}
+/** The requested display name is already held by another server in this organization. */
+export class GameServerManifestNameConflictError extends Schema.TaggedError<GameServerManifestNameConflictError>()(
+  'GameServerManifestNameConflictError',
+  { serverId: Schema.String, name: Schema.String },
+) {}
 export class GameServerManifestPersistenceError extends Schema.TaggedError<GameServerManifestPersistenceError>()(
   'GameServerManifestPersistenceError',
   { operation: Schema.String, message: Schema.String },
@@ -704,6 +763,27 @@ export interface GameServerManifestPolicyUpdateAcceptance {
   readonly state: 'succeeded'
 }
 
+/**
+ * Rename changes only `game_servers.name`. Endpoint, DNS, ports, plugin,
+ * placement, backup keys, R2 keys, and Durable Object names stay bound to the
+ * immutable server ID.
+ */
+export interface GameServerRenameCommand {
+  readonly organizationId: string
+  readonly actorId: string
+  readonly correlationId: string
+  readonly auditRequestContext: AuditRequestContextValue
+  readonly idempotencyKey: string
+  readonly serverId: string
+  readonly expectedRevision: number
+  readonly name: GameServerName
+}
+
+export type GameServerRenameError =
+  | GameServerManifestRepositoryError
+  | GameServerManifestNameConflictError
+  | GameServerManifestValidationError
+
 export type GameServerManifestRepositoryError =
   | GameServerManifestNotFoundError
   | GameServerManifestIdempotencyConflictError
@@ -727,4 +807,7 @@ export interface GameServerManifestRepository {
   readonly acceptPolicyUpdate: (
     command: GameServerManifestPolicyUpdateCommand,
   ) => Effect.Effect<GameServerManifestPolicyUpdateAcceptance, GameServerManifestRepositoryError>
+  readonly acceptRename: (
+    command: GameServerRenameCommand,
+  ) => Effect.Effect<GameServerRenameAcceptance, GameServerRenameError>
 }

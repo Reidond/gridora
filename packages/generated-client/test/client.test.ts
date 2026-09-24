@@ -84,6 +84,45 @@ describe('generated client', () => {
     })
   })
 
+  it('sends the typed rename DTO and decodes the terminal acceptance', async () => {
+    let request: Request | undefined
+    const acceptance = {
+      disposition: 'created',
+      operationId: 'rename-operation-1',
+      serverId: 'server-1',
+      name: 'Frontline West',
+      expectedRevision: 7,
+      desiredRevision: 8,
+      state: 'succeeded',
+    }
+    const client = createGridoraClient({
+      baseUrl: 'https://api.gridora.test',
+      fetch: async (input, init) => {
+        request = new Request(input, init)
+        return Response.json({ acceptance, workflowState: 'not-required' })
+      },
+    })
+    await expect(
+      Effect.runPromise(
+        client.renameGameServer(
+          'night-watch',
+          'server-1',
+          { name: 'Frontline West', expectedRevision: 7 },
+          { idempotencyKey: 'rename-request-1' },
+        ),
+      ),
+    ).resolves.toEqual({ acceptance, workflowState: 'not-required' })
+    expect(request?.method).toBe('POST')
+    expect(request?.url).toBe(
+      'https://api.gridora.test/v1/organizations/night-watch/game-servers/server-1/actions/rename',
+    )
+    expect(request?.headers.get('idempotency-key')).toBe('rename-request-1')
+    await expect(request?.json()).resolves.toEqual({
+      name: 'Frontline West',
+      expectedRevision: 7,
+    })
+  })
+
   it('uses the opaque auth state with browser credentials', async () => {
     const requests: Request[] = []
     const client = createGridoraClient({

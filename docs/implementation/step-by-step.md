@@ -4175,177 +4175,49 @@ token '<'` because the deployed Nuxt runtime had an empty API base.
 - Blocker: Do not tag or release until an exact-main replacement run produces
   the signed artifact and provider smoke succeeds.
 - Decision: ADR 0103.
-||||||| parent of 3c25db6 (chore(ci): refresh pinned actions and vitest, retire Dependabot PRs)
 
-## Step 132: Refresh pinned actions and retire Dependabot pull requests
-
-- Status: local
-- Situation: Step 130 deleted the Dependabot configuration. Six Dependabot
-  pull requests from 2026-08-24 stayed open, and their bumps were not in the
-  SHA-pinned `uses:` lines. Some pins had only a major-version comment, and the
-  `actions/setup-go` pin had a `v7.0.0` comment on the `v6.5.0` commit.
-- Task: Apply the proposed bumps in one reviewed change, and close the
-  orphaned pull requests.
-- Action: Resolve each upstream tag to its commit with `gh api` and dereference
-  annotated tags. Pin `actions/checkout` v7.0.1, `pnpm/action-setup` v6.0.10,
-  `sigstore/cosign-installer` v4.1.2, and `anchore/sbom-action/download-syft`
-  v0.24.0. Skip `actions/dependency-review-action` because no workflow uses it.
-- Action: Bump `anchore/scan-action/download-grype` from v7.4.0 to v7.4.2.
-  Give every other pin its exact release comment. Correct the `setup-go`
-  comment to `v6.5.0`. Keep Syft 1.51.0, Grype 0.117.0, Go 1.27.0, and pnpm
-  11.21.0 unchanged.
-- Action: Bump the `vitest` catalog entry from 4.1.10 to 4.1.11 and regenerate
-  `pnpm-lock.yaml`.
-- Result: All 26 `uses:` lines carry a full commit SHA and an exact release
-  comment. `cosign-installer` v4.1.2 installs Cosign v3.0.6 by default. The
-  signing and verification scripts already use `--bundle`, which Cosign v3
-  requires.
-- Evidence: `.github/workflows/ci.yml`, `.github/workflows/image.yml`,
-  `.github/workflows/release.yml`, `pnpm-workspace.yaml`, `pnpm-lock.yaml`,
-  and `.specs/github-actions-pin-refresh/spec.md`. Resolved commits:
-  `actions/checkout` v7.0.1 `3d3c42e5aac5ba805825da76410c181273ba90b1`,
-  `pnpm/action-setup` v6.0.10 `0977fd99725f1db4007ccb2928dbb4e90d06cc86`,
-  `sigstore/cosign-installer` v4.1.2 `6f9f17788090df1f26f669e9d70d6ae9567deba6`,
-  `anchore/sbom-action` v0.24.0 `e22c389904149dbc22b58101806040fa8d37a610`,
-  and `anchore/scan-action` v7.4.2 `27805bf3b4e84b4a5c980df22ed233c00390a439`.
-- Verification: `pnpm install --frozen-lockfile` passes. The complete local
-  gate reports 920 formatted files, zero lint or type errors across 522 files,
-  and 112 successful builds. Workflow, image, artifact-evidence, and
-  documentation tests pass 34 assertions. The full local test run passes 1,488
-  tests. It reports 20 failures, and each failure is a 5-second timeout. The
-  host load average was above 140 on 12 cores. The eight affected files pass
-  all 52 tests with a 60-second timeout. Pull-request CI is the authority for
-  the complete suite.
-- Blocker: The manual Node image and tag-only Release workflows do not run on
-  pull requests. The first Cosign v3 signing proof occurs in the next manual
-  image run. Major bumps not applied: `actions/setup-node` v5 to v7,
-  `actions/setup-go` v6 to v7, `actions/upload-artifact` v4 to v7, and
-  `actions/download-artifact` v4 to v8. Newer releases `pnpm/action-setup`
-  v6.1.0 and `anchore/sbom-action` v0.24.2 exist. This change keeps the
-  releases that the Dependabot pull requests proposed.
-- Decision: ADR 0105.
-||||||| parent of ed47115 (refactor(api): remove the game-server action 501 catch-all)
-
-## Step 133: Remove the game-server action 501 catch-all
+## Step 132: Rename a game server as a metadata-only operation
 
 - Status: local
-- Situation: The API registered a tenant catch-all for
-  `/v1/organizations/:organization/game-servers/:id/actions/*`. It authorized
-  an operator and then answered 501 for every unknown action. This was the last
-  public 501 route. ADR 0065 removes old public 501 routes instead of
-  advertising them.
-- Task: Remove the catch-all. Keep registered game-server actions. Remove the
-  dead 501 branches in the OpenAPI generator and the mutation audit inventory.
-- Action: Delete the `tenantNotImplemented` helper and its single
-  registration. Keep `notImplemented` only for the internal Workflow-step and
-  Queue-event guards. Remove the `Not implemented` response description from
-  the OpenAPI generator and the 501 filter from the audit inventory check.
-  Keep the 501 compatibility handling in the web client.
-- Result: An unknown game-server action falls through to the standard 404
-  `NOT_FOUND` problem document. An unauthenticated caller still receives 401
-  from Access verification before routing. Tenant authorization does not run
-  for an unmatched route, so an authenticated caller receives the same 404 for
-  its own and for a foreign organization. This 404 does not disclose
-  membership. The registered `actions/clone` route still authorizes the tenant
-  and rejects a foreign organization with 403.
-- Evidence: `apps/api/src/index.ts`, `apps/api/src/contracts.ts`,
-  `apps/api/src/mutation-audit-inventory.ts`,
-  `apps/api/test/composed-boundaries.test.ts`,
-  `apps/api/test/observation-realtime-contracts.test.ts`,
-  `.specs/remove-game-server-action-catch-all/spec.md`, and ADR 0065.
-- Verification: The focused API suite passes 7 composed-boundary tests
-  and 9 contract and audit-inventory tests. The complete local gate reports
-  920 formatted files, zero lint or type errors across 522 files, 226 passing
-  test files with 1,510 passing tests, and 112 successful builds. The complete
-  test run used raised per-test timeouts because host load caused unrelated
-  default-timeout failures that moved between runs.
-- Blocker: None.
-- Decision: ADR 0065.
-||||||| parent of fb7f124 (feat(cli): store credentials in the Windows vault and smoke-test the packaged binary)
-
-## Step 134: Store Windows CLI credentials in the platform vault
-
-- Status: local
-- Situation: The CLI failed closed on Windows, so a Windows user could not keep
-  a login. Step 95 recorded that the Windows credential adapter and the
-  packaged-binary smoke test were not complete.
-- Task: Store the Windows refresh token in the platform vault without a
-  plaintext fallback. Prove that the packaged CLI binary starts.
-- Action: Run `powershell.exe -NoProfile -NonInteractive -Command` with a fixed
-  script that loads the WinRT `PasswordVault`. Use the resource
-  `dev.gridora.cli` and the profile as the user name.
-- Action: Send the token as base64 UTF-8 text through standard input. Return
-  the stored token as base64 UTF-8 text. Keep the token and its encoding out of
-  the process arguments.
-- Action: Validate the profile before a process starts. Embed the profile only
-  as a single-quoted literal. Double every single-quote form that PowerShell
-  accepts.
-- Action: Map exit 44, "Element not found", to a missing item. Map every other
-  vault failure to `keychain_read_failed`, `keychain_write_failed`, or
-  `keychain_delete_failed`. Map a missing `powershell.exe` to
-  `keychain_unavailable`.
-- Action: Bundle the `@gridora/*` workspace packages into the CLI build. Add
-  `--version`. Add `pnpm test:cli-smoke` and run it in the CI `verify` job on
-  the existing Ubuntu runner.
-- Result: The CLI can store, read, and delete a Windows login in the platform
-  vault. The packaged `dist/main.mjs` now starts. Before this step it failed
-  with `ERR_MODULE_NOT_FOUND` because it imported workspace TypeScript source.
-- Evidence: `apps/cli/src/node-runtime.ts`, `apps/cli/tsdown.config.ts`,
-  `apps/cli/test/system-credential-store.test.ts`,
-  `apps/cli/test/version.test.ts`, `infra/scripts/smoke-cli-binary.mjs`,
-  `.github/workflows/ci.yml`, `tests/architecture/release-workflow.test.ts`,
-  `README.md`, and ADR 0108.
-- Test: The injected process-adapter test asserts the exact PowerShell argv and
-  standard input. It covers Windows set, get, missing get, delete, missing
-  delete, vault errors, absent PowerShell, hostile profile names, and literal
-  escaping. The unsupported-platform test now uses `freebsd`.
-- Verification: The focused CLI, workflow, and documentation tests pass 50
-  assertions. `pnpm check` reports 924 formatted files and zero lint or type
-  errors across 525 files. `pnpm test` passes 227 test files with 1,519 tests
-  and 3 skipped. The default 5-second timeout failed unrelated API and bootstrap
-  tests while the host load average was above 200; those files pass alone with
-  a 60-second timeout. `pnpm build` completes 112 tasks. `pnpm test:cli-smoke`
-  passes on macOS.
-- Blocker: No real Windows host executed the vault script. The adapter is
-  proven only against the injected process fake. CI runs the binary smoke on
-  Ubuntu only.
-- Decision: ADR 0108.
-||||||| parent of f6bbbf7 (docs(record): close pending steps 109 and 111 with the recorded gate)
-
-## Step 135: Close the pending steps 109 and 111
-
-- Status: local
-- Situation: Steps 109 and 111 kept the status `pending`. Steps 128 through 130
-  record complete gates on the same code, and Step 110 already has the status
-  `local`. A release step must not cite a record that is not truthful.
-- Task: Record one repository-wide gate. Close Steps 109 and 111 with that
-  gate. Do not rewrite their Action, Result, Evidence, or Blocker lines.
-- Action: Run `pnpm check`, `pnpm test`, `pnpm build`,
-  `pnpm wrangler:types:check`, `pnpm test:cloudflare`, and the documentation
-  record test on commit `a78364a02da26227e0b1bb0398f660cb466d664c`.
-- Action: Change Steps 109 and 111 from `pending` to `local`. Add one
-  Verification line to each step that points to this gate.
-- Action: Add one sentence to the Step 111 Blocker line. The sentence states
-  that Steps 112 through 128 record the later repairs.
-- Action: Add one header sentence that tells how a later step closes a pending
-  step.
-- Result: No step in the record has the status `pending`. The Step 111 Blocker
-  line no longer shows the firewall repair as future work only.
-- Evidence: `docs/implementation/step-by-step.md`,
-  `.specs/record-pending-step-reconciliation/spec.md`, ADR 0084, ADR 0085, and
-  ADR 0086.
-- Verification: `pnpm check` reports 920 formatted files and zero lint or type
-  errors across 522 files. `pnpm build` completes 112 builds.
-  `pnpm wrangler:types:check` reports 7 up-to-date binding declarations.
-  `pnpm test:cloudflare` passes 6 test files with 11 tests. The documentation
-  record test passes 4 tests.
-- Verification: `pnpm test` reports 225 passing and 2 skipped test files of
-  228, and 1,503 passing and 3 skipped tests of 1,511. Five tests in
-  `tests/infrastructure/node-bootstrap.test.ts` exceed the 5-second default
-  timeout. Concurrent sessions held the 12-core host at a load average between
-  14 and 336. The same file passes all 7 tests with a 120-second timeout; its
-  slowest test takes 11.4 seconds. Step 130 records 1,508 passing tests on the
-  same code.
-- Blocker: The five node-bootstrap tests need a pass at the default timeout on
-  an idle host or in CI before a release step cites this gate.
-- Decision: ADR 0086.
+- Situation: Manifest planning rejected every `metadata.name` change. A name
+  change forced delete-and-recreate. The API, CLI, and web console had no
+  rename path.
+- Task: Make rename one durable, idempotent, revision-fenced mutation that
+  changes only the display name. Keep one mutation per manifest apply.
+- Action: Plan a name-only manifest delta as `rename`. Reject a rename that is
+  combined with another delta. Reuse the create-time server name schema.
+- Action: Add `POST /v1/organizations/:organization/game-servers/:serverId/actions/rename`
+  for the Operator role. Register it before the `actions/*` 501 fallback. Add
+  it to the OpenAPI routes, the mutation audit inventory, and the generated
+  client.
+- Action: Write the terminal operation, the new name, the next desired
+  revision, the staged v1 audit envelope, the compact audit row, and the
+  manifest mutation receipt in one D1 batch. Add migration 0064 to accept the
+  rename operation and audit pair in the receipt guard.
+- Action: Return HTTP 409 `NAME_CONFLICT` when another server in the
+  organization holds the name. Return a revision conflict for a stale revision
+  or a pending lifecycle operation. Return HTTP 400 for an invalid or unchanged
+  name.
+- Action: Add `gridora servers rename <server> --name <name>
+--expected-revision <revision>` and an inline rename control next to the web
+  server title.
+- Result: A rename does not change the endpoint, DNS, ports, plugin, placement,
+  spec JSON, backup keys, R2 keys, or Durable Object names. A lost response
+  adopts the original operation. A reused key with a different payload,
+  actor, or action conflicts.
+- Evidence: `packages/game-server-manifest-control`,
+  `packages/game-server-manifest-d1`,
+  `packages/migrations/sql/0064_game_server_rename_mutations.sql`,
+  `apps/api/src/game-server-manifest-routes.ts`, `apps/api/src/contracts.ts`,
+  `packages/http-hono-effect`, `packages/generated-client`,
+  `apps/cli/src/commands.ts`, `apps/web/pages/o/[slug]/servers/[id].vue`, and
+  demo-mode screenshots attached to pull request 29 with `gh pr comment --attach`.
+- Verification: The focused control, D1, route, composed API, problem mapping,
+  audit inventory, generated client, and CLI suites pass 111 tests. The
+  complete gate reports 921 formatted files, zero lint or type errors across
+  522 files, 1,532 passing tests in 224 passing files, and 112 successful
+  builds. Six existing Node bootstrap and Cloudflare binding tests exceed the
+  5-second default timeout on the local machine and pass with a 60-second
+  timeout.
+- Blocker: No Worker, D1 migration, or game server was deployed or changed.
+- Decision: ADR 0107.

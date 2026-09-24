@@ -29,6 +29,7 @@ export type ServerPlanRequest = Parameters<GeneratedGridoraClient['planGameServe
 export type ServerApplyRequest = Parameters<GeneratedGridoraClient['applyGameServer']>[1]
 /** The generated client keeps the move target/revision DTO aligned with the API. */
 export type GameServerMoveRequest = Parameters<GeneratedGridoraClient['moveGameServer']>[2]
+export type GameServerRenameRequest = Parameters<GeneratedGridoraClient['renameGameServer']>[2]
 export type ServerPlanResponse = ServerApplyPlan
 export interface BackupRestoreRequest {
   readonly backupId: string
@@ -1284,6 +1285,10 @@ export const useGridoraApi = () => {
     cloneGameServer: (slug: string, serverId: string, body: unknown) =>
       mutations.run(`organization.${slug}.game-server.${serverId}.clone`, body, (idempotencyKey) =>
         run(client.cloneGameServer(slug, serverId, body as never, { idempotencyKey })),
+      ),
+    renameGameServer: (slug: string, serverId: string, body: GameServerRenameRequest) =>
+      mutations.run(`organization.${slug}.game-server.${serverId}.rename`, body, (idempotencyKey) =>
+        run(client.renameGameServer(slug, serverId, body, { idempotencyKey })),
       ),
     validateGameServerManifest: (slug: string, body: unknown) =>
       run(client.validateGameServerManifest(slug, body as never)),

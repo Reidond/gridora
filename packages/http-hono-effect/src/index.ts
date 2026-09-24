@@ -22,6 +22,13 @@ export type Problem = typeof Problem.Type
 export const CommercialReviewRequiredProblemCode = 'COMMERCIAL_REVIEW_REQUIRED' as const
 export type CommercialReviewRequiredProblemCode = typeof CommercialReviewRequiredProblemCode
 
+/**
+ * The requested display name is already held in this organization. A retry
+ * with the same name cannot succeed, so clients must ask for a different name.
+ */
+export const NameConflictProblemCode = 'NAME_CONFLICT' as const
+export type NameConflictProblemCode = typeof NameConflictProblemCode
+
 export interface HttpFailure {
   readonly status: number
   readonly problem: Problem
@@ -102,6 +109,8 @@ export const problemFromError = (error: unknown, requestId: string): HttpFailure
           detail,
           requestId,
         )
+      if (stringField(error, 'code') === 'name_conflict')
+        return problem(409, NameConflictProblemCode, 'Name already in use', detail, requestId)
       return problem(409, 'CONFLICT', 'Request conflict', detail, requestId)
     case 'LastOwnerError':
     case 'RevisionConflictError':

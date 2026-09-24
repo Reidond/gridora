@@ -6,6 +6,7 @@ import {
   canonicalRequestIdsFromContext,
   effectHandler,
   makeWorkerEffectRuntime,
+  NameConflictProblemCode,
   problemFromError,
   problemResponse,
 } from '../src/index.js'
@@ -42,6 +43,19 @@ describe('problem mapping', () => {
         'req_generic_conflict',
       ).problem.code,
     ).toBe('CONFLICT')
+  })
+
+  it('maps a typed name conflict to a non-retryable NAME_CONFLICT 409', () => {
+    const failure = problemFromError(
+      { _tag: 'ConflictError', code: 'name_conflict', message: 'The name is already used' },
+      'req_name_conflict',
+    )
+    expect(failure.status).toBe(409)
+    expect(failure.problem).toMatchObject({
+      code: NameConflictProblemCode,
+      detail: 'The name is already used',
+      retryable: false,
+    })
   })
 
   it('maps authentication failures without leaking causes', async () => {

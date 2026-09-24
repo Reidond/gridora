@@ -299,6 +299,26 @@ describe('centrally composed API boundaries', () => {
     }
   })
 
+  it('composes the typed rename action ahead of the unimplemented game-server action fallback', async () => {
+    const rename = (organization: string, body: string) =>
+      access(`/v1/organizations/${organization}/game-servers/server-a/actions/rename`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'idempotency-key': 'rename-composed-01' },
+        body,
+      })
+    const invalid = await rename(
+      'organization-a',
+      JSON.stringify({ name: '', expectedRevision: 1 }),
+    )
+    expect(invalid.status).toBe(400)
+    await expect(invalid.json()).resolves.toMatchObject({ code: 'REQUEST_VALIDATION_FAILED' })
+    const foreign = await rename(
+      'organization-b',
+      JSON.stringify({ name: 'Frontline West', expectedRevision: 1 }),
+    )
+    expect(foreign.status).toBe(403)
+  })
+
   it('bypasses Access on observation ingestion and requires a machine bearer credential', async () => {
     const before = jwksRequests
     const missing = await app.request(

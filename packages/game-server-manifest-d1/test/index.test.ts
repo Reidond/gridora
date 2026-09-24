@@ -12,6 +12,7 @@ import {
 import type {
   GameServerManifest,
   GameServerManifestPolicyUpdateCommand,
+  GameServerRenameCommand,
 } from '@gridora/game-server-manifest-control'
 
 type SqlInputValue = null | number | bigint | string | NodeJS.ArrayBufferView
@@ -39,14 +40,22 @@ class SqliteStatement implements GameServerManifestD1Statement {
 
 class SqliteD1 implements GameServerManifestD1Database {
   private loseResponse = false
+  private beforeBatch: (() => void) | undefined
   constructor(readonly database: DatabaseSync) {}
   loseNextBatchResponseAfterCommit(): void {
     this.loseResponse = true
+  }
+  /** Simulates a concurrent writer that commits between the fence read and the batch. */
+  runBeforeNextBatch(action: () => void): void {
+    this.beforeBatch = action
   }
   prepare(sql: string): GameServerManifestD1Statement {
     return new SqliteStatement(this.database, sql)
   }
   async batch(statements: readonly GameServerManifestD1Statement[]): Promise<readonly unknown[]> {
+    const concurrent = this.beforeBatch
+    this.beforeBatch = undefined
+    concurrent?.()
     this.database.exec('BEGIN IMMEDIATE')
     try {
       for (const statement of statements) (statement as SqliteStatement).run()
@@ -65,7 +74,7 @@ class SqliteD1 implements GameServerManifestD1Database {
 
 const sqlDirectory = fileURLToPath(new URL('../../migrations/sql/', import.meta.url))
 const migrationFiles = readdirSync(sqlDirectory)
-  .filter((file) => /^\d{4}_.+\.sql$/.test(file) && Number(file.slice(0, 4)) <= 63)
+  .filter((file) => /^\d{4}_.+\.sql$/.test(file) && Number(file.slice(0, 4)) <= 64)
   .sort()
 
 let database: DatabaseSync
@@ -145,6 +154,41 @@ const command = (
   backupPolicy: { schedule: '0 5 * * *', retainCount: 14 },
   ...overrides,
 })
+
+const renameCommand = (
+  overrides: Partial<GameServerRenameCommand> = {},
+): GameServerRenameCommand => ({
+  organizationId: 'org-a',
+  actorId: 'identity-a',
+  correlationId: 'manifest-rename-correlation',
+  auditRequestContext: auditRequestContext('manifest-rename-correlation'),
+  idempotencyKey: 'manifest-rename-a',
+  serverId: 'server-a',
+  expectedRevision: 1,
+  name: 'Frontline West',
+  ...overrides,
+})
+
+const insertServer = (organizationId: string, id: string, name: string) =>
+  database
+    .prepare(
+      `INSERT INTO game_servers
+      (organization_id, id, name, plugin_id, plugin_version, desired_state, observed_state,
+       placement_policy_json, domain, desired_revision, observed_revision, active_config_revision,
+       created_at, updated_at)
+      VALUES (?, ?, ?, 'arma-reforger', '0.1.0', 'running', 'running',
+       '{"mode":"shared","nodeId":"node-a"}', NULL, 1, 1, 1,
+       '2026-08-24T12:00:00.000Z', '2026-08-24T12:00:00.000Z')`,
+    )
+    .run(organizationId, id, name)
+
+const serverRow = () =>
+  database
+    .prepare(
+      `SELECT name, domain, placement_policy_json AS placement, plugin_id AS pluginId,
+        desired_revision AS desiredRevision FROM game_servers WHERE id = 'server-a'`,
+    )
+    .get()
 
 const repository = () =>
   makeGameServerManifestD1Repository(d1, {
@@ -254,6 +298,160 @@ describe('game server manifest D1 repository', () => {
     await expect(
       Effect.runPromise(repository().acceptPolicyUpdate(command({ actorId: 'identity-b' }))),
     ).rejects.toMatchObject({ _tag: 'GameServerManifestIdempotencyConflictError' })
+  })
+
+  it('renames display metadata atomically with an operation, v1 audit, and receipt', async () => {
+    const specBefore = database
+      .prepare(`SELECT spec_json AS specJson FROM game_server_desired_specs`)
+      .get()
+    const accepted = await Effect.runPromise(repository().acceptRename(renameCommand()))
+    expect(accepted).toEqual({
+      disposition: 'created',
+      operationId: 'manifest-policy-operation-1',
+      serverId: 'server-a',
+      name: 'Frontline West',
+      expectedRevision: 1,
+      desiredRevision: 2,
+      state: 'succeeded',
+    })
+    // Only the display name and the revision fence change. The server ID keeps
+    // endpoint, placement, plugin, backup-schedule, R2, and Durable Object keys.
+    expect(serverRow()).toEqual({
+      name: 'Frontline West',
+      domain: null,
+      placement: '{"mode":"shared","nodeId":"node-a"}',
+      pluginId: 'arma-reforger',
+      desiredRevision: 2,
+    })
+    expect(
+      database
+        .prepare(`SELECT spec_json AS specJson, desired_revision AS desiredRevision,
+          source_operation_id AS sourceOperationId FROM game_server_desired_specs`)
+        .get(),
+    ).toEqual({ ...specBefore, desiredRevision: 2, sourceOperationId: accepted.operationId })
+    expect(
+      database.prepare(`SELECT id FROM backup_schedules WHERE server_id = 'server-a'`).get(),
+    ).toEqual({ id: 'backup-schedule:server-a' })
+    expect(
+      database
+        .prepare(`SELECT type, status, progress, idempotency_key AS idempotencyKey
+          FROM operations WHERE id = ?`)
+        .get(accepted.operationId),
+    ).toEqual({
+      type: 'server.manifest.rename',
+      status: 'succeeded',
+      progress: 100,
+      idempotencyKey: 'manifest-rename-a',
+    })
+    expect(
+      database
+        .prepare(`SELECT action, target_id AS targetId, result FROM audit_events WHERE id = ?`)
+        .get('manifest-policy-audit-1'),
+    ).toEqual({
+      action: 'game-server.manifest.rename.accepted',
+      targetId: 'server-a',
+      result: 'succeeded',
+    })
+    expect(
+      database
+        .prepare(`SELECT capture_status AS captureStatus FROM audit_event_envelopes
+          WHERE event_id = 'manifest-policy-audit-1'`)
+        .get(),
+    ).toEqual({ captureStatus: 'complete' })
+    const renamed = await Effect.runPromise(repository().readByName('org-a', 'Frontline West'))
+    expect(renamed?.serverId).toBe('server-a')
+  })
+
+  it('adopts the original rename after response loss and on an exact replay', async () => {
+    d1.loseNextBatchResponseAfterCommit()
+    const adopted = await Effect.runPromise(repository().acceptRename(renameCommand()))
+    expect(adopted).toMatchObject({
+      disposition: 'adopted',
+      name: 'Frontline West',
+      desiredRevision: 2,
+    })
+    const replay = await Effect.runPromise(repository().acceptRename(renameCommand()))
+    expect(replay).toEqual({ ...adopted, disposition: 'adopted' })
+    expect(
+      database.prepare('SELECT count(*) AS count FROM game_server_manifest_mutations').get(),
+    ).toEqual({ count: 1 })
+    expect(
+      database
+        .prepare(`SELECT count(*) AS count FROM operations WHERE type = 'server.manifest.rename'`)
+        .get(),
+    ).toEqual({ count: 1 })
+  })
+
+  it('rejects a reused rename key with a changed name, actor, or action', async () => {
+    await Effect.runPromise(repository().acceptRename(renameCommand()))
+    for (const changed of [
+      renameCommand({ name: 'Frontline East', expectedRevision: 2 }),
+      renameCommand({ actorId: 'identity-b' }),
+    ])
+      await expect(Effect.runPromise(repository().acceptRename(changed))).rejects.toMatchObject({
+        _tag: 'GameServerManifestIdempotencyConflictError',
+      })
+    await expect(
+      Effect.runPromise(
+        repository().acceptPolicyUpdate(
+          command({ idempotencyKey: 'manifest-rename-a', expectedRevision: 2 }),
+        ),
+      ),
+    ).rejects.toMatchObject({ _tag: 'GameServerManifestIdempotencyConflictError' })
+  })
+
+  it('fences a stale revision and an active lifecycle claim without writing', async () => {
+    await expect(
+      Effect.runPromise(repository().acceptRename(renameCommand({ expectedRevision: 3 }))),
+    ).rejects.toMatchObject({ _tag: 'GameServerManifestRevisionConflictError' })
+    database.exec(
+      `UPDATE game_servers SET pending_lifecycle_operation_id = 'initial-operation' WHERE id = 'server-a'`,
+    )
+    await expect(
+      Effect.runPromise(repository().acceptRename(renameCommand())),
+    ).rejects.toMatchObject({ _tag: 'GameServerManifestRevisionConflictError' })
+    expect(serverRow()).toMatchObject({ name: 'Frontline', desiredRevision: 1 })
+    expect(
+      database.prepare('SELECT count(*) AS count FROM game_server_manifest_mutations').get(),
+    ).toEqual({ count: 0 })
+  })
+
+  it('returns a name conflict for a name held in the same organization only', async () => {
+    insertServer('org-a', 'server-b', 'Frontline West')
+    await expect(
+      Effect.runPromise(repository().acceptRename(renameCommand())),
+    ).rejects.toMatchObject({ _tag: 'GameServerManifestNameConflictError', name: 'Frontline West' })
+    expect(serverRow()).toMatchObject({ name: 'Frontline', desiredRevision: 1 })
+
+    database.exec(`INSERT INTO organizations
+      (id, name, slug, status, timezone, default_region, onboarding_step, policy_revision, revision, created_at)
+      VALUES ('org-b', 'B', 'b', 'active', 'UTC', 'eu-west', 'complete', 1, 1, 'now')`)
+    insertServer('org-b', 'server-c', 'Frontline East')
+    await expect(
+      Effect.runPromise(repository().acceptRename(renameCommand({ name: 'Frontline East' }))),
+    ).resolves.toMatchObject({ disposition: 'created', name: 'Frontline East' })
+  })
+
+  it('maps a concurrent name claim that wins the UNIQUE constraint to a name conflict', async () => {
+    d1.runBeforeNextBatch(() => insertServer('org-a', 'server-b', 'Frontline West'))
+    await expect(
+      Effect.runPromise(repository().acceptRename(renameCommand())),
+    ).rejects.toMatchObject({ _tag: 'GameServerManifestNameConflictError' })
+    expect(serverRow()).toMatchObject({ name: 'Frontline', desiredRevision: 1 })
+    expect(
+      database
+        .prepare(`SELECT count(*) AS count FROM operations WHERE type = 'server.manifest.rename'`)
+        .get(),
+    ).toEqual({ count: 0 })
+  })
+
+  it('rejects an unchanged name and a server outside the organization', async () => {
+    await expect(
+      Effect.runPromise(repository().acceptRename(renameCommand({ name: 'Frontline' }))),
+    ).rejects.toMatchObject({ _tag: 'GameServerManifestValidationError', code: 'name_unchanged' })
+    await expect(
+      Effect.runPromise(repository().acceptRename(renameCommand({ organizationId: 'org-b' }))),
+    ).rejects.toMatchObject({ _tag: 'GameServerManifestNotFoundError' })
   })
 
   it('persists an immutable draft and adopts the exact response-loss replay', async () => {
