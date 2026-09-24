@@ -154,3 +154,85 @@ describe('Contabo REST adapter', () => {
     })
   })
 })
+
+describe('Contabo custom images', () => {
+  const setup = (respond: (input: JsonHttpRequest) => JsonHttpResponse) => {
+    const requests: JsonHttpRequest[] = []
+    const http = {
+      request: (input: JsonHttpRequest) => {
+        requests.push(input)
+        return Effect.succeed(respond(input))
+      },
+    }
+    const api = makeContaboHttpApi(http, {
+      contractPeriodMonths: 1,
+      requestId: () => '00000000-0000-4000-8000-000000000002',
+      cancellation: () => ({ cancellationDate: '2026-09-24', billingStopsAt: '2026-09-24' }),
+      secureWipeAndStop: () => Effect.succeed({}),
+      firewallIdForInstance: () => 'firewall',
+      firewallOwnershipDescription: () => 'gridora',
+    })
+    return { api, requests }
+  }
+
+  it('imports a Linux custom image from the locator and decodes the result', async () => {
+    const { api, requests } = setup(() => ({
+      status: 201,
+      headers: {},
+      body: {
+        data: [{ imageId: 'img-1', name: 'n', description: 'd', status: 'downloading', url: 'x' }],
+      },
+    }))
+    const image = await Effect.runPromise(
+      api.importImage!({
+        name: 'n',
+        description: 'd',
+        url: 'https://artifacts.example.test/image.qcow2',
+        version: '4242.1',
+      }),
+    )
+    expect(image).toEqual({ id: 'img-1', name: 'n', description: 'd', status: 'downloading' })
+    expect(requests[0]).toMatchObject({
+      method: 'POST',
+      path: '/v1/compute/images',
+      body: {
+        name: 'n',
+        description: 'd',
+        url: 'https://artifacts.example.test/image.qcow2',
+        osType: 'Linux',
+        version: '4242.1',
+      },
+    })
+  })
+
+  it('lists only custom images, reads one, and deletes by encoded id', async () => {
+    const { api, requests } = setup((input) =>
+      input.method === 'DELETE'
+        ? { status: 204, headers: {}, body: undefined }
+        : {
+            status: 200,
+            headers: {},
+            body: {
+              _pagination: { totalPages: 1 },
+              data: [{ imageId: 'img-1', name: 'n', status: 'downloaded' }],
+            },
+          },
+    )
+    expect(await Effect.runPromise(api.customImages!())).toEqual([
+      { id: 'img-1', name: 'n', description: '', status: 'downloaded' },
+    ])
+    expect((await Effect.runPromise(api.getImage!('img-1'))).status).toBe('downloaded')
+    await Effect.runPromise(api.deleteImage!('a/b'))
+    expect(requests.map((request) => `${request.method} ${request.path}`)).toEqual([
+      'GET /v1/compute/images?standardImage=false&page=1&size=1000',
+      'GET /v1/compute/images/img-1',
+      'DELETE /v1/compute/images/a%2Fb',
+    ])
+  })
+
+  it('fails on a rejected delete', async () => {
+    const { api } = setup(() => ({ status: 409, headers: {}, body: {} }))
+    const result = await Effect.runPromise(Effect.result(api.deleteImage!('img-1')))
+    expect(result._tag === 'Failure' && result.failure.status).toBe(409)
+  })
+})

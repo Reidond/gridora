@@ -36,6 +36,20 @@ export interface ContaboApiError {
   readonly message: string
   readonly retryAfterSeconds?: number
 }
+/** A Contabo custom image. `description` carries the encoded Gridora ownership record. */
+export interface ContaboCustomImage {
+  readonly id: string
+  readonly name: string
+  readonly description: string
+  readonly status: 'downloading' | 'downloaded' | 'error' | 'unknown'
+}
+export interface ContaboImageImportInput {
+  readonly name: string
+  readonly description: string
+  /** Short-lived HTTPS locator. The adapter sends it once and never returns it. */
+  readonly url: string
+  readonly version: string
+}
 export interface ContaboApi {
   readonly regions: () => Effect.Effect<readonly { id: string; name: string }[], ContaboApiError>
   readonly products: (region?: string) => Effect.Effect<
@@ -86,6 +100,13 @@ export interface ContaboApi {
     id: string,
     rules: readonly unknown[],
   ) => Effect.Effect<void, ContaboApiError>
+  /** Custom-image operations. Older adapters may omit them; callers must fail closed. */
+  readonly customImages?: () => Effect.Effect<readonly ContaboCustomImage[], ContaboApiError>
+  readonly importImage?: (
+    input: ContaboImageImportInput,
+  ) => Effect.Effect<ContaboCustomImage, ContaboApiError>
+  readonly getImage?: (id: string) => Effect.Effect<ContaboCustomImage, ContaboApiError>
+  readonly deleteImage?: (id: string) => Effect.Effect<void, ContaboApiError>
 }
 export const capabilities: ProviderCapabilities = {
   hourlyBilling: false,

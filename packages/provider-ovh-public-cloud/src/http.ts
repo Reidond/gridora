@@ -1,6 +1,6 @@
 import { Effect } from 'effect'
 import type { CreateNodeInput, JsonHttpClientShape, ProviderNode } from '@gridora/provider-sdk'
-import type { OvhApiError, OvhOpenStackApi } from './index.js'
+import type { OvhApiError, OvhCustomImage, OvhOpenStackApi } from './index.js'
 
 export interface OvhOpenStackHttpOptions {
   readonly regions: readonly { readonly id: string; readonly name: string }[]
@@ -8,6 +8,8 @@ export interface OvhOpenStackHttpOptions {
   readonly networkHttp: JsonHttpClientShape
   readonly securityGroupIdForServer: (providerNodeId: string) => string
   readonly securityGroupOwnershipDescription: (providerNodeId: string) => string
+  /** Glance endpoint client. Without it, custom-image operations are not offered. */
+  readonly imageHttp?: JsonHttpClientShape
 }
 const failure = (message: string, status?: number): OvhApiError => ({
   message,
@@ -97,6 +99,86 @@ const decodeNode = (value: unknown): Effect.Effect<ProviderNode, OvhApiError> =>
   })
 }
 const serverPath = (id: string) => `/servers/${encodeURIComponent(id)}`
+const glanceImagePath = (id: string) => `/v2/images/${encodeURIComponent(id)}`
+const glanceStatus = (value: string | undefined): OvhCustomImage['status'] => {
+  switch (value?.toLowerCase()) {
+    case 'queued':
+      return 'queued'
+    case 'saving':
+    case 'uploading':
+    case 'importing':
+      return 'importing'
+    case 'active':
+      return 'active'
+    case 'killed':
+    case 'deactivated':
+      return 'failed'
+    case 'deleted':
+    case 'pending_delete':
+      return 'deleted'
+    default:
+      return 'unknown'
+  }
+}
+/** Only Gridora-namespaced string properties are returned; other provider fields are dropped. */
+const decodeGlanceImage = (value: unknown): Effect.Effect<OvhCustomImage, OvhApiError> => {
+  const id = stringField(value, 'id')
+  const name = stringField(value, 'name')
+  if (id === undefined || name === undefined) return Effect.fail(failure('invalid Glance image'))
+  const properties: Record<string, string> = {}
+  if (typeof value === 'object' && value !== null)
+    for (const [key, item] of Object.entries(value))
+      if ((key === 'managed-by' || key.startsWith('gridora-')) && typeof item === 'string')
+        properties[key] = item
+  const architecture = stringField(value, 'architecture')
+  return Effect.succeed({
+    id,
+    name,
+    status: glanceStatus(stringField(value, 'status')),
+    architecture: architecture === 'aarch64' || architecture === 'arm64' ? 'arm64' : 'amd64',
+    properties,
+  })
+}
+const glanceOperations = (
+  imageHttp: JsonHttpClientShape,
+): Pick<
+  Required<OvhOpenStackApi>,
+  'customImages' | 'importImage' | 'getImage' | 'deleteImage'
+> => ({
+  customImages: (name) =>
+    Effect.flatMap(
+      request(imageHttp, 'GET', `/v2/images?name=${encodeURIComponent(name)}&limit=25`),
+      (response) =>
+        Effect.flatMap(arrayField(response.body, 'images'), (items) =>
+          Effect.forEach(items, decodeGlanceImage),
+        ),
+    ),
+  importImage: (input) =>
+    Effect.flatMap(
+      request(imageHttp, 'POST', '/v2/images', {
+        ...input.properties,
+        name: input.name,
+        disk_format: 'qcow2',
+        container_format: 'bare',
+        visibility: 'private',
+        architecture: 'x86_64',
+      }),
+      (created) =>
+        Effect.flatMap(decodeGlanceImage(created.body), (image) =>
+          Effect.as(
+            request(imageHttp, 'POST', `${glanceImagePath(image.id)}/import`, {
+              method: { name: 'web-download', uri: input.sourceUrl },
+            }),
+            image,
+          ),
+        ),
+    ),
+  getImage: (id) =>
+    Effect.flatMap(request(imageHttp, 'GET', glanceImagePath(id)), (response) =>
+      decodeGlanceImage(response.body),
+    ),
+  deleteImage: (id) => Effect.as(request(imageHttp, 'DELETE', glanceImagePath(id)), undefined),
+})
 const matchesMetadata = (node: ProviderNode, filter: Readonly<Record<string, string>>): boolean => {
   const values: Readonly<Record<string, string>> = {
     'managed-by': node.metadata.managedBy,
@@ -316,4 +398,5 @@ export const makeOvhOpenStackHttpApi = (
   deleteSnapshot: (id) =>
     Effect.as(request(http, 'DELETE', `/images/${encodeURIComponent(id)}`), undefined),
   replaceSecurityGroupRules: (id, rules) => reconcileSecurityGroup(options, id, rules),
+  ...(options.imageHttp === undefined ? {} : glanceOperations(options.imageHttp)),
 })

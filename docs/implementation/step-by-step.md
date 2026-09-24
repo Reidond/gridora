@@ -4391,3 +4391,66 @@ token '<'` because the deployed Nuxt runtime had an empty API base.
   timeout.
 - Blocker: No Worker, D1 migration, or game server was deployed or changed.
 - Decision: ADR 0107.
+
+## Step 137: Compose the paid provider image smoke lane
+
+- Status: local
+- Situation: The release verifier requires a successful `provider-image-smoke`
+  job. The job accepted only the simulated provider. Step 89 recorded that no
+  custom-image import, artifact locator, boot and agent-health observer,
+  response-loss adoption, or provider cleanup adapter was composed.
+- Task: Compose a paid OVHcloud and Contabo smoke behind an explicit live-test
+  flag and a hard TTL. Always remove the node and the image. Keep the simulated
+  lane unchanged. Do not run the paid lane.
+- Action: Add `packages/provider-image-smoke`. Its Effect service registers or
+  adopts the signed QCOW2 through the existing image registration transport.
+  It creates or adopts one node through `createOrAdopt` with an identity
+  derived from the source commit, artifact digest, provider, region, and run.
+  It polls boot and validates the agent health sample against the existing
+  agent-telemetry contract.
+- Action: Enforce the 1-to-60-minute TTL inside the service. Run cleanup after
+  every outcome, uninterruptibly, with its own budget. Discover the node and
+  image by exact smoke metadata. Dispose of the node first. Confirm each
+  disposal by provider readback. Return typed cleanup receipts on success and
+  on failure.
+- Action: Add optional Glance image list, import, read, and delete operations
+  to `OvhOpenStackApi`. Add optional custom-image list, import, read, and
+  delete operations to `ContaboApi`. Encode Contabo image ownership in the
+  bounded description. Dispose of a Contabo node by confirmed contract
+  cancellation because Contabo has no immediate deletion.
+- Action: Add `infra/scripts/run-provider-image-smoke.mjs`. It runs the bundled
+  CLI. The CLI checks `GRIDORA_LIVE_TEST=true` and the fixed credential names
+  before any provider request. It prints only redacted evidence and exits 0
+  only when the smoke passed and both cleanups are confirmed.
+- Action: Add the `ovh` and `contabo` choices and the `live_test` input to the
+  Node image workflow. Fail a paid provider without `live_test=true` in the
+  first step. Use the `image-signing` environment for the smoke secrets. Stage
+  the QCOW2 in private R2 behind a presigned URL that expires with the TTL, and
+  remove the object in an `always()` step. Raise the job timeout to 90 minutes.
+- Result: A paid smoke has one fail-closed path with a hard TTL and
+  metadata-driven cleanup. The simulated lane keeps its validation and
+  simulation steps and still satisfies the release verifier.
+- Evidence: `packages/provider-image-smoke`,
+  `packages/provider-ovh-public-cloud/src/http.ts`,
+  `packages/provider-contabo/src/http.ts`,
+  `infra/scripts/run-provider-image-smoke.mjs`, `.github/workflows/image.yml`,
+  `tests/architecture/release-workflow.test.ts`, `docs/operations/release.md`,
+  and ADR 0106.
+- Verification: The smoke package passes 53 tests with fake providers and a
+  virtual clock. The OVHcloud and Contabo driver packages pass 21 tests. The
+  workflow and image evidence tests pass 8 tests, including the `ovh` and
+  `contabo` denial without `live_test=true`. `pnpm check` reports 933
+  formatted files and no lint or type errors across 532 files. `pnpm test`
+  reports 1,563 passing tests in 228 passing files. Five existing
+  `tests/infrastructure/node-bootstrap.test.ts` cases time out at the default
+  5-second limit on the loaded local machine and pass with a 60-second limit;
+  this change does not touch them. `pnpm build` completes 114 builds. No test
+  makes a live provider request.
+- Blocker: No live agent-health source exists for the smoke node. It receives
+  no registration token and the drivers expose no console channel, so the live
+  observer fails closed with `agent-health-source-unavailable`. A paid run can
+  prove import, boot, adoption, and cleanup, but cannot pass the release gate
+  yet. The owner must also add the provider and R2 secrets to `image-signing`.
+  No workflow was dispatched with `live_test=true`, and no provider resource
+  was created.
+- Decision: ADR 0106.

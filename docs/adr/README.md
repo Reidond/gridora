@@ -151,6 +151,9 @@ Rejected.
   keeps authenticated console routes on the Access-protected console hostname.
 - ADR 0105 reduces GitHub automation to one routine CI signal plus manual image
   and tag-triggered release workflows, with no self-review gates.
+- ADR 0106 composes the paid OVHcloud and Contabo image smoke behind
+  `live_test`, a hard in-service TTL, adopt-only response-loss recovery, and
+  metadata-driven always-cleanup of the node, image, and artifact locator.
 - ADR 0107 makes game-server rename a metadata-only, revision-fenced, idempotent
   durable operation with a per-organization `NAME_CONFLICT` and no runtime effect.
 - ADR 0108 stores the Windows CLI refresh token in the WinRT PasswordVault

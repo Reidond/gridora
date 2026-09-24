@@ -1,0 +1,32 @@
+{
+  "name": "@gridora/provider-image-smoke",
+  "version": "0.1.0",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./drivers": "./src/drivers.ts",
+    "./live": "./src/live.ts",
+    "./cli": "./src/cli.ts"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json --noEmit && tsdown",
+    "check": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --root ../.. packages/provider-image-smoke/test"
+  },
+  "dependencies": {
+    "@gridora/agent-telemetry": "workspace:*",
+    "@gridora/provider-contabo": "workspace:*",
+    "@gridora/provider-image-registration": "workspace:*",
+    "@gridora/provider-ovh-public-cloud": "workspace:*",
+    "@gridora/provider-sdk": "workspace:*",
+    "effect": "catalog:"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "tsdown": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}
