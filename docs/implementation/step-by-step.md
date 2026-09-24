@@ -4599,3 +4599,39 @@ token '<'` because the deployed Nuxt runtime had an empty API base.
 - Blocker: Do not tag or release until an exact-main replacement run produces
   the signed artifact and provider smoke succeeds.
 - Decision: ADR 0103.
+
+## Step 140: Select the image checksum line for the promotion manifest
+
+- Status: local
+- Situation: Protected exact-main image run 36052431439 passed image
+  construction, rootfs evidence, package policy, SBOM generation, the Grype
+  gate, and Cosign signing for the first time. It then failed the "Create the
+  image promotion manifest" step with exit code 1 and no message.
+- Task: Find why the manifest step failed on a valid signed image and make the
+  next failure of that kind explain itself.
+- Action: Read the checksum file the workflow writes. It holds two lines, the
+  image and the rootfs archive, because `sha256sum` receives both paths. The
+  manifest step cut the first field of the whole file, so the image digest
+  variable held two digests joined by a newline, and the manifest script's
+  single-digest check failed silently under `set -e`.
+- Action: Select the image's own line by path with `awk` and fail with a
+  message when that does not give exactly one 64-hex digest.
+- Action: Make `infra/images/create-image-promotion-manifest` validate every
+  coordinate by name and print which one is missing or malformed on stderr.
+- Action: Add a manifest test that rejects a two-line image digest and asserts
+  the named message. Add an image-asset test that requires the by-path
+  selection in the workflow and forbids the whole-file cut.
+- Result: The manifest step reads the exact image digest that Cosign signed.
+  A malformed coordinate now names itself in the log.
+- Evidence: `.github/workflows/image.yml`,
+  `infra/images/create-image-promotion-manifest`,
+  `tests/infrastructure/image-promotion-manifest.test.ts`,
+  `tests/image/image-assets.test.ts`,
+  `tasks/BUG-image-manifest-checksum-line.md`, run 36052431439, and ADR 0065.
+- Verification: The focused manifest and image-asset tests pass, including the
+  new two-line denial case. A local two-line checksum file yields exactly one
+  digest through the new selection. ShellCheck passes on the changed script.
+  The documentation record test and `pnpm check` pass.
+- Blocker: Do not tag or release until an exact-main replacement run produces
+  the signed artifact and provider smoke succeeds.
+- Decision: ADR 0065.

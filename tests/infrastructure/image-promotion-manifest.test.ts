@@ -56,6 +56,21 @@ describe('image promotion manifest', () => {
     })
   })
 
+  it('rejects a multi-line image checksum and names the coordinate', async () => {
+    await expect(
+      execute(generator, [], {
+        env: {
+          ...process.env,
+          ...coordinates,
+          GRIDORA_IMAGE_SHA256: `${'a'.repeat(64)}\n${'b'.repeat(64)}`,
+        },
+      }),
+    ).rejects.toMatchObject({
+      code: 1,
+      stderr: expect.stringContaining('GRIDORA_IMAGE_SHA256 is missing or malformed'),
+    })
+  })
+
   it('rejects malformed or missing digest coordinates', async () => {
     await expect(
       execute(generator, [], {
