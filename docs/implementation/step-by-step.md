@@ -4665,3 +4665,43 @@ token '<'` because the deployed Nuxt runtime had an empty API base.
 - Blocker: Do not tag or release until an exact-main replacement run produces
   the signed artifact and provider smoke succeeds.
 - Decision: ADR 0065.
+
+## Step 142: Produce the first signed Node image with simulated provider smoke
+
+- Status: local
+- Situation: Every protected image run before 2026-09-24 stopped before an
+  accepted artifact. Six exact-main runs on 2026-09-24 each failed one stage
+  later than the run before: Ubuntu phased updates (Step 131), Docker package
+  drift (Step 138), fixed High Go-module findings in Traefik and cloudflared
+  (Step 139), the promotion-manifest checksum selection (Step 140), and the
+  checksum file paths in the downloaded artifact (Step 141).
+- Task: Record the first protected run that passes `validate`, `build-local`,
+  and `provider-image-smoke` on one exact `main` commit.
+- Action: Dispatch the Node image workflow on `main` commit
+  `84c9fec22d545e5ecada70a36a3986048f0f0d06` with `build_local_image=true`,
+  `provider_image_smoke_provider=simulated`, region `eu-west`, plan `small`,
+  TTL 30 minutes, and `live_test=false`.
+- Result: Run 36062117204 succeeds. `validate` passes in 2 minutes,
+  `build-local` in 27 minutes, and `provider-image-smoke` in 5 minutes. The
+  build purges no finding, keeps the `--fail-on high --only-fixed` Grype rule,
+  signs the QCOW2 with Cosign v3.0.6 through the protected workflow identity,
+  and uploads artifact `gridora-node-36062117204-1` (4,810,683,122 bytes,
+  expires 2026-10-01T21:58:20Z). The smoke job verifies the exact signed
+  artifact from its download directory and completes the simulated Arma
+  lifecycle: install, configure, mod, start, UDP, health, update, rollback,
+  stop, and restart, with disposable outer and nested containers removed.
+- Action: Mark the five image bug tasks fixed with this run as evidence.
+- Evidence: GitHub Actions run 36062117204, jobs 107843274645, 107843966057,
+  and 107852759426, artifact 10835858547, `tasks/BUG-image-*.md`, and
+  ADR 0084.
+- Verification: The release verifier `infra/scripts/verify-release-image-evidence.sh`
+  requires exactly these three successful jobs and a non-expired artifact on
+  the tag commit. This run satisfies that condition for commit `84c9fec` until
+  the artifact expires.
+- Blocker: No version tag exists. A `v0.1.0` tag on `84c9fec` before
+  2026-10-01 would pass the image-evidence gate; any later commit needs a new
+  exact-main run. The paid provider smoke, live provider acceptance, and
+  production delivery proofs remain owner-gated (Steps 137 and the
+  `live-provider-acceptance`, `first-release-v0-1-0`, and
+  `production-delivery-proofs` specs).
+- Decision: ADR 0084.

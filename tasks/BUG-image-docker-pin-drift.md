@@ -1,6 +1,6 @@
 # BUG: Node image build fails the pending-upgrade gate on Docker package drift
 
-- Status: fixed-pending-image-run
+- Status: fixed (protected image run 36062117204 succeeded on 2026-09-24)
 - Found: 2026-09-24, protected image run 36040577564 (exact main `fbfdbd9`, `build_local_image=true`)
 - Owner: unassigned
 - Spec: `.specs/image-docker-pin-refresh/spec.md`
